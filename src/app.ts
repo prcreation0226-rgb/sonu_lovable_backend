@@ -88,22 +88,33 @@ import billingRouter from './routes/billing.routes';
 import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 
-app.use(`${env.API_PREFIX}/auth`, authRouter);
-app.use(`${env.API_PREFIX}/users`, userRouter);
-app.use(`${env.API_PREFIX}/roles`, roleRouter);
-app.use(`${env.API_PREFIX}/staff`, staffRouter);
-app.use(`${env.API_PREFIX}/locations`, locationRouter);
-app.use(`${env.API_PREFIX}/patients`, patientRouter);
-app.use(`${env.API_PREFIX}/appointments`, appointmentRouter);
-app.use(`${env.API_PREFIX}/clinical`, clinicalRouter);
-app.use(`${env.API_PREFIX}/consents`, consentRouter);
-app.use(`${env.API_PREFIX}/inventory`, inventoryRouter);
-app.use(`${env.API_PREFIX}/billing`, billingRouter);
-app.use(`${env.API_PREFIX}/compliance`, complianceRouter);
+const apiRouters: [string, any][] = [
+  ['/auth', authRouter],
+  ['/users', userRouter],
+  ['/roles', roleRouter],
+  ['/staff', staffRouter],
+  ['/locations', locationRouter],
+  ['/patients', patientRouter],
+  ['/appointments', appointmentRouter],
+  ['/clinical', clinicalRouter],
+  ['/consents', consentRouter],
+  ['/inventory', inventoryRouter],
+  ['/billing', billingRouter],
+  ['/compliance', complianceRouter],
+];
+
+for (const [path, router] of apiRouters) {
+  if (env.API_PREFIX !== '/api') {
+    app.use(`${env.API_PREFIX}${path}`, router);
+  }
+  app.use(`/api${path}`, router);
+}
 
 // Table compatibility fallback for legacy endpoints (/api/:tableName)
 app.use('/api', tableCompatibilityRouter);
-app.use(`${env.API_PREFIX}`, tableCompatibilityRouter);
+if (env.API_PREFIX !== '/api') {
+  app.use(`${env.API_PREFIX}`, tableCompatibilityRouter);
+}
 
 // ---- 404 Handler ----
 app.use((_req, res) => {

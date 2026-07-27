@@ -3,7 +3,7 @@
 
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { authLimiter } from '../middleware/rateLimiter';
 import {
@@ -51,9 +51,9 @@ router.get('/me', authenticate, AuthController.getMe);
 /**
  * @route   POST /api/v1/auth/logout
  * @desc    Invalidate active session and refresh tokens
- * @access  Protected
+ * @access  Public / Optional Auth (Always succeeds)
  */
-router.post('/logout', authenticate, AuthController.logout);
+router.post('/logout', optionalAuth, AuthController.logout);
 
 /**
  * @route   POST /api/v1/auth/mfa/setup
