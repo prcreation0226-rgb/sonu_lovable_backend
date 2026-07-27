@@ -55,6 +55,11 @@ router.post(
  * @access  All Staff Roles
  */
 router.get(
+  '/pending-count',
+  AppointmentController.getPendingCount
+);
+
+router.get(
   '/',
   requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointments

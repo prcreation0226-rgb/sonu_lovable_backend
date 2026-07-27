@@ -37,6 +37,16 @@ const ALLOWED_TRANSITIONS: Record<AppointmentStatus, AppointmentStatus[]> = {
 
 export class AppointmentService {
   /**
+   * Get pending appointments count.
+   */
+  static async getPendingCount() {
+    const count = await prisma.appointment.count({
+      where: { status: 'PENDING', deletedAt: null },
+    });
+    return { count };
+  }
+
+  /**
    * Create a new Appointment (with double-booking overlap check).
    */
   static async createAppointment(input: CreateAppointmentInput, userId: string, ipAddress: string) {
