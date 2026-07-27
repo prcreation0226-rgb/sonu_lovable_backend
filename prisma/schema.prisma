@@ -52,16 +52,16 @@ model User {
   email                 String      @unique @db.VarChar(255)
   passwordHash          String      @map("password_hash") @db.VarChar(255)
   isActive              Boolean     @default(true) @map("is_active")
-  deletedAt             DateTime?   @map("deleted_at") @db.DateTime
+  deletedAt             DateTime?   @map("deleted_at")
   mfaEnabled            Boolean     @default(false) @map("mfa_enabled")
   mfaSecret             String?     @map("mfa_secret") @db.VarChar(255) // Encrypted via AES-256-GCM
-  mfaGracePeriodEndsAt  DateTime?   @map("mfa_grace_period_ends_at") @db.DateTime
-  lastLoginAt           DateTime?   @map("last_login_at") @db.DateTime
+  mfaGracePeriodEndsAt  DateTime?   @map("mfa_grace_period_ends_at")
+  lastLoginAt           DateTime?   @map("last_login_at")
   lastLoginIp           String?     @map("last_login_ip") @db.VarChar(45)
   failedAttempts        Int         @default(0) @map("failed_attempts")
-  lockedUntil           DateTime?   @map("locked_until") @db.DateTime
-  createdAt             DateTime    @default(now()) @map("created_at") @db.DateTime
-  updatedAt             DateTime    @updatedAt @map("updated_at") @db.DateTime
+  lockedUntil           DateTime?   @map("locked_until")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
 
   userRoles             UserRole[]
   sessions              Session[]
@@ -93,7 +93,7 @@ model Role {
   id              String           @id @default(uuid()) @db.Char(36)
   name            String           @unique @db.VarChar(50) // admin, medical_director, nurse_practitioner, staff, scheduler, receptionist, privacy_officer
   description     String?          @db.Text
-  createdAt       DateTime         @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   userRoles       UserRole[]
   rolePermissions RolePermission[]
@@ -105,7 +105,7 @@ model Permission {
   id              String           @id @default(uuid()) @db.Char(36)
   code            String           @unique @db.VarChar(100)
   description     String?          @db.Text
-  createdAt       DateTime         @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   rolePermissions RolePermission[]
 
@@ -128,7 +128,7 @@ model UserRole {
   userId      String   @map("user_id") @db.Char(36)
   roleId      String   @map("role_id") @db.Char(36)
   grantedBy   String?  @map("granted_by") @db.Char(36)
-  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt   DateTime @default(now()) @map("created_at")
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   role        Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
@@ -143,8 +143,8 @@ model Session {
   token       String   @unique @db.VarChar(500)
   ipAddress   String   @map("ip_address") @db.VarChar(45)
   userAgent   String?  @map("user_agent") @db.Text
-  expiresAt   DateTime @map("expires_at") @db.DateTime
-  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -156,8 +156,8 @@ model RefreshToken {
   userId      String   @map("user_id") @db.Char(36)
   token       String   @unique @db.VarChar(500)
   isRevoked   Boolean  @default(false) @map("is_revoked")
-  expiresAt   DateTime @map("expires_at") @db.DateTime
-  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -169,8 +169,8 @@ model MfaConfig {
   userId             String   @unique @map("user_id") @db.Char(36)
   secret             String   @db.VarChar(255) // Encrypted via AES-256-GCM
   isVerified         Boolean  @default(false) @map("is_verified")
-  createdAt          DateTime @default(now()) @map("created_at") @db.DateTime
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.DateTime
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -181,8 +181,8 @@ model MfaRecoveryCode {
   id          String    @id @default(uuid()) @db.Char(36)
   userId      String    @map("user_id") @db.Char(36)
   codeHash    String    @map("code_hash") @db.VarChar(255)
-  usedAt      DateTime? @map("used_at") @db.DateTime
-  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -201,7 +201,7 @@ model AuthAuditLog {
   ipAddress   String   @map("ip_address") @db.VarChar(45)
   userAgent   String?  @map("user_agent") @db.Text
   metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt   DateTime @default(now()) @map("created_at")
 
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -215,7 +215,7 @@ model PasswordHistory {
   id           String   @id @default(uuid()) @db.Char(36)
   userId       String   @map("user_id") @db.Char(36)
   passwordHash String   @map("password_hash") @db.VarChar(255)
-  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt    DateTime @default(now()) @map("created_at")
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -231,7 +231,7 @@ model SecurityEventLog {
   userId      String?  @map("user_id") @db.Char(36)
   description String   @db.Text
   metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt   DateTime @default(now()) @map("created_at")
 
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -257,12 +257,12 @@ model StaffProfile {
   licenseState        String?          @map("license_state") @db.VarChar(2)
   licenseExpiry       DateTime?        @map("license_expiry") @db.Date
   isActive            Boolean          @default(true) @map("is_active")
-  deletedAt           DateTime?        @map("deleted_at") @db.DateTime
+  deletedAt           DateTime?        @map("deleted_at")
   isOwner             Boolean          @default(false) @map("is_owner")
   hourlyRateCents     Int?             @map("hourly_rate_cents")
   commissionPercent   Decimal?         @map("commission_percent") @db.Decimal(5, 2)
-  createdAt           DateTime         @default(now()) @map("created_at") @db.DateTime
-  updatedAt           DateTime         @updatedAt @map("updated_at") @db.DateTime
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
 
   user                User             @relation(fields: [userId], references: [id], onDelete: Restrict)
   staffLocations      StaffLocation[]
@@ -304,8 +304,8 @@ model Location {
   phone           String?          @db.VarChar(20)
   timezone        String           @default("America/Los_Angeles") @db.VarChar(50)
   isActive        Boolean          @default(true) @map("is_active")
-  deletedAt       DateTime?        @map("deleted_at") @db.DateTime
-  createdAt       DateTime         @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?        @map("deleted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   staffLocations  StaffLocation[]
   serviceLocations ServiceLocation[]
@@ -348,12 +348,12 @@ model PatientProfile {
   dateOfBirth             DateTime?               @map("date_of_birth") @db.Date
   gender                  String?                 @db.VarChar(20)
   medicalAlerts           String?                 @map("medical_alerts") @db.Text
-  marketingConsentAt      DateTime?               @map("marketing_consent_at") @db.DateTime
-  nppAcknowledgedAt       DateTime?               @map("npp_acknowledged_at") @db.DateTime
+  marketingConsentAt      DateTime?               @map("marketing_consent_at")
+  nppAcknowledgedAt       DateTime?               @map("npp_acknowledged_at")
   isActive                Boolean                 @default(true) @map("is_active")
-  deletedAt               DateTime?               @map("deleted_at") @db.DateTime
-  createdAt               DateTime                @default(now()) @map("created_at") @db.DateTime
-  updatedAt               DateTime                @updatedAt @map("updated_at") @db.DateTime
+  deletedAt               DateTime?               @map("deleted_at")
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
 
   user                    User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
   demographics            Demographics?
@@ -414,8 +414,8 @@ model Demographics {
   policyNumber            String?        @map("policy_number") @db.VarChar(100)
   groupNumber             String?        @map("group_number") @db.VarChar(100)
   referralSource          String?        @map("referral_source") @db.VarChar(255)
-  deletedAt               DateTime?      @map("deleted_at") @db.DateTime
-  updatedAt               DateTime       @updatedAt @map("updated_at") @db.DateTime
+  deletedAt               DateTime?      @map("deleted_at")
+  updatedAt               DateTime       @updatedAt @map("updated_at")
 
   patient                 PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -430,8 +430,8 @@ model MedicalHistory {
   status          String         @default("active") @db.VarChar(20)
   diagnosedDate   DateTime?      @map("diagnosed_date") @db.Date
   notes           String?        @db.Text
-  deletedAt       DateTime?      @map("deleted_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?      @map("deleted_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -446,8 +446,8 @@ model Allergy {
   allergen        String         @db.VarChar(255)
   reaction        String?        @db.VarChar(255)
   severity        String         @default("moderate") @db.VarChar(20)
-  deletedAt       DateTime?      @map("deleted_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?      @map("deleted_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -466,8 +466,8 @@ model Medication {
   startDate           DateTime?      @map("start_date") @db.Date
   endDate             DateTime?      @map("end_date") @db.Date
   isActive            Boolean        @default(true) @map("is_active")
-  deletedAt           DateTime?      @map("deleted_at") @db.DateTime
-  createdAt           DateTime       @default(now()) @map("created_at") @db.DateTime
+  deletedAt           DateTime?      @map("deleted_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
 
   patient             PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -485,8 +485,8 @@ model PatientDocument {
   mimeType        String         @map("mime_type") @db.VarChar(100)
   fileSize        Int?           @map("file_size")
   uploadedBy      String         @map("uploaded_by") @db.Char(36)
-  deletedAt       DateTime?      @map("deleted_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?      @map("deleted_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   uploader        User           @relation(fields: [uploadedBy], references: [id], onDelete: Restrict)
@@ -505,8 +505,8 @@ model PatientPhoto {
   bodyArea        String?           @map("body_area") @db.VarChar(100)
   notes           String?           @db.Text
   takenBy         String            @map("taken_by") @db.Char(36)
-  deletedAt       DateTime?         @map("deleted_at") @db.DateTime
-  takenAt         DateTime          @default(now()) @map("taken_at") @db.DateTime
+  deletedAt       DateTime?         @map("deleted_at")
+  takenAt         DateTime          @default(now()) @map("taken_at")
 
   patient         PatientProfile    @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter       Encounter?        @relation(fields: [encounterId], references: [id], onDelete: SetNull)
@@ -524,7 +524,7 @@ model CommunicationPreference {
   allowEmail      Boolean        @default(true) @map("allow_email")
   allowSms        Boolean        @default(true) @map("allow_sms")
   allowMarketing  Boolean        @default(false) @map("allow_marketing")
-  updatedAt       DateTime       @updatedAt @map("updated_at") @db.DateTime
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -537,9 +537,9 @@ model PatientIntake {
   token           String         @unique @db.VarChar(255)
   formData        Json           @map("form_data")
   status          String         @default("pending") @db.VarChar(20)
-  completedAt     DateTime?      @map("completed_at") @db.DateTime
-  expiresAt       DateTime?      @map("expires_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  completedAt     DateTime?      @map("completed_at")
+  expiresAt       DateTime?      @map("expires_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -555,8 +555,8 @@ model PhiDeletionRequest {
   status          String         @default("pending") @db.VarChar(20)
   reason          String?        @db.Text
   retentionPassed Boolean        @default(false) @map("retention_passed")
-  processedAt     DateTime?      @map("processed_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  processedAt     DateTime?      @map("processed_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   requester       User           @relation(fields: [requestedBy], references: [id], onDelete: Restrict)
@@ -575,7 +575,7 @@ model ServiceCategory {
   description     String?       @db.Text
   displayOrder    Int           @default(0) @map("display_order")
   isActive        Boolean       @default(true) @map("is_active")
-  createdAt       DateTime      @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   services        Service[]
 
@@ -595,8 +595,8 @@ model Service {
   requiresConsultation  Boolean           @default(false) @map("requires_consultation")
   requiresConsent       Boolean           @default(true) @map("requires_consent")
   isActive              Boolean           @default(true) @map("is_active")
-  deletedAt             DateTime?         @map("deleted_at") @db.DateTime
-  createdAt             DateTime          @default(now()) @map("created_at") @db.DateTime
+  deletedAt             DateTime?         @map("deleted_at")
+  createdAt             DateTime          @default(now()) @map("created_at")
 
   category              ServiceCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   serviceLocations      ServiceLocation[]
@@ -640,22 +640,22 @@ model Appointment {
   patientId           String                    @map("patient_id") @db.Char(36)
   staffId             String                    @map("staff_id") @db.Char(36)
   locationId          String                    @map("location_id") @db.Char(36)
-  startAt             DateTime                  @map("start_at") @db.DateTime
-  endAt               DateTime                  @map("end_at") @db.DateTime
+  startAt             DateTime                  @map("start_at")
+  endAt               DateTime                  @map("end_at")
   status              AppointmentStatus         @default(PENDING)
   bookingToken        String?                   @unique @map("booking_token") @db.VarChar(255)
   notes               String?                   @db.Text
   internalNotes       String?                   @map("internal_notes") @db.Text
   source              AppointmentSource         @default(ONLINE)
   cancellationReason  String?                   @map("cancellation_reason") @db.Text
-  cancelledAt         DateTime?                 @map("cancelled_at") @db.DateTime
-  checkedInAt         DateTime?                 @map("checked_in_at") @db.DateTime
-  startedAt           DateTime?                 @map("started_at") @db.DateTime
-  completedAt         DateTime?                 @map("completed_at") @db.DateTime
+  cancelledAt         DateTime?                 @map("cancelled_at")
+  checkedInAt         DateTime?                 @map("checked_in_at")
+  startedAt           DateTime?                 @map("started_at")
+  completedAt         DateTime?                 @map("completed_at")
   rescheduledFromId   String?                   @map("rescheduled_from_id") @db.Char(36)
-  deletedAt           DateTime?                 @map("deleted_at") @db.DateTime
-  createdAt           DateTime                  @default(now()) @map("created_at") @db.DateTime
-  updatedAt           DateTime                  @updatedAt @map("updated_at") @db.DateTime
+  deletedAt           DateTime?                 @map("deleted_at")
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
 
   patient             PatientProfile            @relation(fields: [patientId], references: [id], onDelete: Restrict)
   staff               StaffProfile              @relation(fields: [staffId], references: [id], onDelete: Restrict)
@@ -687,7 +687,7 @@ model AppointmentStatusHistory {
   newStatus       AppointmentStatus @map("new_status")
   changedBy       String            @map("changed_by") @db.Char(36)
   reason          String?           @db.Text
-  createdAt       DateTime          @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime          @default(now()) @map("created_at")
 
   appointment     Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
@@ -743,7 +743,7 @@ model WaitlistEntry {
   preferredDays String?        @map("preferred_days") @db.VarChar(100)
   notes         String?        @db.Text
   status        String         @default("waiting") @db.VarChar(20)
-  createdAt     DateTime       @default(now()) @map("created_at") @db.DateTime
+  createdAt     DateTime       @default(now()) @map("created_at")
 
   patient       PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
@@ -764,10 +764,10 @@ model Encounter {
   encounterType   String            @map("encounter_type") @db.VarChar(50)
   status          String            @default("in_progress") @db.VarChar(20)
   chiefComplaint  String?           @map("chief_complaint") @db.Text
-  completedAt     DateTime?         @map("completed_at") @db.DateTime
-  deletedAt       DateTime?         @map("deleted_at") @db.DateTime
-  createdAt       DateTime          @default(now()) @map("created_at") @db.DateTime
-  updatedAt       DateTime          @updatedAt @map("updated_at") @db.DateTime
+  completedAt     DateTime?         @map("completed_at")
+  deletedAt       DateTime?         @map("deleted_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
 
   patient         PatientProfile    @relation(fields: [patientId], references: [id], onDelete: Restrict)
   appointment     Appointment?      @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
@@ -802,12 +802,12 @@ model SoapNote {
   additionalData  Json?             @map("additional_data")
   status          String            @default("draft") @db.VarChar(20)
   cosignedBy      String?           @map("cosigned_by") @db.Char(36)
-  cosignedAt      DateTime?         @map("cosigned_at") @db.DateTime
-  signedAt        DateTime?         @map("signed_at") @db.DateTime
-  lockedAt        DateTime?         @map("locked_at") @db.DateTime
-  deletedAt       DateTime?         @map("deleted_at") @db.DateTime
-  createdAt       DateTime          @default(now()) @map("created_at") @db.DateTime
-  updatedAt       DateTime          @updatedAt @map("updated_at") @db.DateTime
+  cosignedAt      DateTime?         @map("cosigned_at")
+  signedAt        DateTime?         @map("signed_at")
+  lockedAt        DateTime?         @map("locked_at")
+  deletedAt       DateTime?         @map("deleted_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
 
   patient         PatientProfile    @relation(fields: [patientId], references: [id], onDelete: Restrict)
   appointment     Appointment?      @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
@@ -835,7 +835,7 @@ model SoapNoteVersion {
   plan            String?  @db.Text
   additionalData  Json?    @map("additional_data")
   createdBy       String   @map("created_by") @db.Char(36)
-  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime @default(now()) @map("created_at")
 
   note            SoapNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
 
@@ -849,7 +849,7 @@ model NoteSignature {
   signatureType   String   @map("signature_type") @db.VarChar(50)
   signatureData   String?  @map("signature_data") @db.Text
   ipAddress       String?  @map("ip_address") @db.VarChar(45)
-  signedAt        DateTime @default(now()) @map("signed_at") @db.DateTime
+  signedAt        DateTime @default(now()) @map("signed_at")
 
   note            SoapNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
 
@@ -863,8 +863,8 @@ model CosignQueue {
   requiredCosignerRole String       @default("medical_director") @map("required_cosigner_role") @db.VarChar(50)
   status               String       @default("pending") @db.VarChar(20)
   assignedToId         String?      @map("assigned_to_id") @db.Char(36)
-  requestedAt          DateTime     @default(now()) @map("requested_at") @db.DateTime
-  resolvedAt           DateTime?    @map("resolved_at") @db.DateTime
+  requestedAt          DateTime     @default(now()) @map("requested_at")
+  resolvedAt           DateTime?    @map("resolved_at")
 
   note                 SoapNote     @relation(fields: [noteId], references: [id], onDelete: Cascade)
   author               StaffProfile @relation("RequestedAuthor", fields: [authorId], references: [id], onDelete: Restrict)
@@ -881,7 +881,7 @@ model NoteAddendum {
   reason          String         @db.Text
   addendumText    String         @map("addendum_text") @db.Text
   authorId        String         @map("author_id") @db.Char(36)
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   note            SoapNote       @relation(fields: [noteId], references: [id], onDelete: Restrict)
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
@@ -897,12 +897,12 @@ model GfeForm {
   services            Json
   totalEstimateCents  Int            @map("total_estimate_cents")
   patientSignature    String?        @map("patient_signature") @db.Text
-  signedAt            DateTime?      @map("signed_at") @db.DateTime
+  signedAt            DateTime?      @map("signed_at")
   status              String         @default("draft") @db.VarChar(20)
   validUntil          DateTime?      @map("valid_until") @db.Date
-  deletedAt           DateTime?      @map("deleted_at") @db.DateTime
-  createdAt           DateTime       @default(now()) @map("created_at") @db.DateTime
-  updatedAt           DateTime       @updatedAt @map("updated_at") @db.DateTime
+  deletedAt           DateTime?      @map("deleted_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
 
   patient             PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   provider            StaffProfile   @relation(fields: [providerId], references: [id], onDelete: Restrict)
@@ -919,9 +919,9 @@ model TreatmentPlan {
   description     String?        @db.Text
   plannedServices Json?          @map("planned_services")
   status          String         @default("active") @db.VarChar(20)
-  deletedAt       DateTime?      @map("deleted_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
-  updatedAt       DateTime       @updatedAt @map("updated_at") @db.DateTime
+  deletedAt       DateTime?      @map("deleted_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   provider        StaffProfile   @relation(fields: [providerId], references: [id], onDelete: Restrict)
@@ -938,10 +938,10 @@ model Protocol {
   steps           Json
   version         Int           @default(1)
   isActive        Boolean       @default(true) @map("is_active")
-  deletedAt       DateTime?     @map("deleted_at") @db.DateTime
+  deletedAt       DateTime?     @map("deleted_at")
   createdBy       String?       @map("created_by") @db.Char(36)
-  createdAt       DateTime      @default(now()) @map("created_at") @db.DateTime
-  updatedAt       DateTime      @updatedAt @map("updated_at") @db.DateTime
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   protocolRuns    ProtocolRun[]
 
@@ -957,8 +957,8 @@ model ProtocolRun {
   runBy           String          @map("run_by") @db.Char(36)
   status          String          @default("in_progress") @db.VarChar(20)
   stepData        Json?           @map("step_data")
-  startedAt       DateTime        @default(now()) @map("started_at") @db.DateTime
-  completedAt     DateTime?       @map("completed_at") @db.DateTime
+  startedAt       DateTime        @default(now()) @map("started_at")
+  completedAt     DateTime?       @map("completed_at")
 
   protocol        Protocol        @relation(fields: [protocolId], references: [id], onDelete: Restrict)
   patient         PatientProfile  @relation(fields: [patientId], references: [id], onDelete: Restrict)
@@ -978,7 +978,7 @@ model AdverseEvent {
   description     String          @db.Text
   actionsTaken    String?         @map("actions_taken") @db.Text
   outcome         String?         @db.Text
-  reportedAt      DateTime        @default(now()) @map("reported_at") @db.DateTime
+  reportedAt      DateTime        @default(now()) @map("reported_at")
 
   patient         PatientProfile  @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter       Encounter?      @relation(fields: [encounterId], references: [id], onDelete: SetNull)
@@ -999,8 +999,8 @@ model ScribeSession {
   audioFileKey    String?           @map("audio_file_key") @db.VarChar(500)
   transcript      String?           @db.Text
   generatedSoap   Json?             @map("generated_soap")
-  audioPurgedAt   DateTime?         @map("audio_purged_at") @db.DateTime
-  createdAt       DateTime          @default(now()) @map("created_at") @db.DateTime
+  audioPurgedAt   DateTime?         @map("audio_purged_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
 
   patient         PatientProfile    @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter       Encounter?        @relation(fields: [encounterId], references: [id], onDelete: SetNull)
@@ -1017,7 +1017,7 @@ model AudioLifecycleLog {
   fileKey         String        @map("file_key") @db.VarChar(500)
   action          String        @db.VarChar(50)
   executedBy      String?       @map("executed_by") @db.VarChar(100)
-  createdAt       DateTime      @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   session         ScribeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -1029,7 +1029,7 @@ model TranscriptStorage {
   sessionId       String        @map("session_id") @db.Char(36)
   fullTranscript  String        @map("full_transcript") @db.Text
   confidenceScore Decimal?      @map("confidence_score") @db.Decimal(5, 2)
-  createdAt       DateTime      @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   session         ScribeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -1050,7 +1050,7 @@ model AiProcessingAudit {
   userId              String?         @map("user_id") @db.Char(36)
   patientId           String?         @map("patient_id") @db.Char(36)
   encounterId         String?         @map("encounter_id") @db.Char(36)
-  createdAt           DateTime        @default(now()) @map("created_at") @db.DateTime
+  createdAt           DateTime        @default(now()) @map("created_at")
 
   user                User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   patient             PatientProfile? @relation(fields: [patientId], references: [id], onDelete: SetNull)
@@ -1067,7 +1067,7 @@ model PurgeLog {
   resourceId      String   @map("resource_id") @db.Char(36)
   purgedFileKey   String   @map("purged_file_key") @db.VarChar(500)
   purgeReason     String   @map("purge_reason") @db.VarChar(255)
-  purgedAt        DateTime @default(now()) @map("purged_at") @db.DateTime
+  purgedAt        DateTime @default(now()) @map("purged_at")
 
   @@map("purge_logs")
 }
@@ -1083,8 +1083,8 @@ model ConsentTemplate {
   serviceId       String?            @map("service_id") @db.Char(36)
   version         Int                @default(1)
   isActive        Boolean            @default(true) @map("is_active")
-  deletedAt       DateTime?          @map("deleted_at") @db.DateTime
-  createdAt       DateTime           @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?          @map("deleted_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
 
   service         Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   versions        ConsentVersion[]
@@ -1113,7 +1113,7 @@ model ConsentAssignment {
   appointmentId   String?          @map("appointment_id") @db.Char(36)
   assignedBy      String           @map("assigned_by") @db.Char(36)
   status          String           @default("pending") @db.VarChar(20)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   patient         PatientProfile   @relation(fields: [patientId], references: [id], onDelete: Restrict)
   template        ConsentTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
@@ -1133,9 +1133,9 @@ model ConsentSignature {
   signatureData   String?              @map("signature_data") @db.Text
   ipAddress       String?              @map("ip_address") @db.VarChar(45)
   userAgent       String?              @map("user_agent") @db.Text
-  signedAt        DateTime?            @map("signed_at") @db.DateTime
-  expiresAt       DateTime?            @map("expires_at") @db.DateTime
-  createdAt       DateTime             @default(now()) @map("created_at") @db.DateTime
+  signedAt        DateTime?            @map("signed_at")
+  expiresAt       DateTime?            @map("expires_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
 
   assignment      ConsentAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   patient         PatientProfile?      @relation(fields: [patientId], references: [id], onDelete: Restrict)
@@ -1150,7 +1150,7 @@ model ConsentAuditHistory {
   action          String           @db.VarChar(50)
   performedBy     String?          @map("performed_by") @db.VarChar(255)
   ipAddress       String?          @map("ip_address") @db.VarChar(45)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   signature       ConsentSignature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
 
@@ -1170,8 +1170,8 @@ model Product {
   unit            String          @default("units") @db.VarChar(50)
   minReorderLevel Int             @default(10) @map("min_reorder_level")
   isActive        Boolean         @default(true) @map("is_active")
-  deletedAt       DateTime?       @map("deleted_at") @db.DateTime
-  createdAt       DateTime        @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?       @map("deleted_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
 
   inventoryLots   InventoryLot[]
   invoiceItems    InvoiceItem[]
@@ -1192,8 +1192,8 @@ model Vendor {
   baaSignedAt     DateTime?       @map("baa_signed_at") @db.Date
   notes           String?         @db.Text
   isActive        Boolean         @default(true) @map("is_active")
-  deletedAt       DateTime?       @map("deleted_at") @db.DateTime
-  createdAt       DateTime        @default(now()) @map("created_at") @db.DateTime
+  deletedAt       DateTime?       @map("deleted_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
 
   inventoryLots   InventoryLot[]
   vendorBaas      VendorBaa[]
@@ -1210,7 +1210,7 @@ model VendorBaa {
   expiryDate      DateTime? @map("expiry_date") @db.Date
   isVerified      Boolean   @default(false) @map("is_verified")
   verifiedBy      String?   @map("verified_by") @db.Char(36)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   vendor          Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
@@ -1230,7 +1230,7 @@ model InventoryLot {
   expiryDate        DateTime?           @map("expiry_date") @db.Date
   receivedAt        DateTime            @map("received_at") @db.Date
   receivedBy        String              @map("received_by") @db.Char(36)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.DateTime
+  createdAt         DateTime            @default(now()) @map("created_at")
 
   product           Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
   vendor            Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
@@ -1248,7 +1248,7 @@ model LotExpiryTracking {
   lotId           String       @map("lot_id") @db.Char(36)
   alertDate       DateTime     @map("alert_date") @db.Date
   isAlertSent     Boolean      @default(false) @map("is_alert_sent")
-  alertSentAt     DateTime?    @map("alert_sent_at") @db.DateTime
+  alertSentAt     DateTime?    @map("alert_sent_at")
 
   lot             InventoryLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
 
@@ -1264,7 +1264,7 @@ model InventoryMovement {
   patientId       String?      @map("patient_id") @db.Char(36)
   encounterId     String?      @map("encounter_id") @db.Char(36)
   performedBy     String       @map("performed_by") @db.Char(36)
-  createdAt       DateTime     @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime     @default(now()) @map("created_at")
 
   lot             InventoryLot @relation(fields: [lotId], references: [id], onDelete: Restrict)
   performer       StaffProfile @relation(fields: [performedBy], references: [id], onDelete: Restrict)
@@ -1279,7 +1279,7 @@ model TreatmentUsage {
   unitsUsed       Int          @map("units_used")
   bodySite        String?      @map("body_site") @db.VarChar(100)
   performedBy     String       @map("performed_by") @db.Char(36)
-  createdAt       DateTime     @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime     @default(now()) @map("created_at")
 
   encounter       Encounter    @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   lot             InventoryLot @relation(fields: [lotId], references: [id], onDelete: Restrict)
@@ -1302,9 +1302,9 @@ model Invoice {
   totalCents      Int            @map("total_cents")
   status          String         @default("unpaid") @db.VarChar(20)
   dueDate         DateTime?      @map("due_date") @db.Date
-  deletedAt       DateTime?      @map("deleted_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
-  updatedAt       DateTime       @updatedAt @map("updated_at") @db.DateTime
+  deletedAt       DateTime?      @map("deleted_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   appointment     Appointment?   @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
@@ -1345,7 +1345,7 @@ model Payment {
   status             String         @default("completed") @db.VarChar(20)
   refundAmountCents  Int            @default(0) @map("refund_amount_cents")
   processedBy        String         @map("processed_by") @db.Char(36)
-  createdAt          DateTime       @default(now()) @map("created_at") @db.DateTime
+  createdAt          DateTime       @default(now()) @map("created_at")
 
   invoice            Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   patient            PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
@@ -1364,7 +1364,7 @@ model Refund {
   reason          String   @db.Text
   stripeRefundId  String?  @map("stripe_refund_id") @db.VarChar(255)
   processedBy     String   @map("processed_by") @db.Char(36)
-  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime @default(now()) @map("created_at")
 
   payment         Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
@@ -1380,7 +1380,7 @@ model Voucher {
   usedCount       Int       @default(0) @map("used_count")
   expiresAt       DateTime? @map("expires_at") @db.Date
   isActive        Boolean   @default(true) @map("is_active")
-  createdAt       DateTime  @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   @@map("vouchers")
 }
@@ -1392,7 +1392,7 @@ model Package {
   priceCents      Int      @map("price_cents")
   validityDays    Int      @default(365) @map("validity_days")
   isActive        Boolean  @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime @default(now()) @map("created_at")
 
   @@map("packages")
 }
@@ -1403,10 +1403,10 @@ model PatientCredit {
   amountCents     Int            @map("amount_cents")
   reason          String         @db.VarChar(255)
   expiresAt       DateTime?      @map("expires_at") @db.Date
-  usedAt          DateTime?      @map("used_at") @db.DateTime
+  usedAt          DateTime?      @map("used_at")
   usedPaymentId   String?        @map("used_payment_id") @db.Char(36)
   createdBy       String         @map("created_by") @db.Char(36)
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   usedPayment     Payment?       @relation(fields: [usedPaymentId], references: [id], onDelete: SetNull)
@@ -1424,7 +1424,7 @@ model PaymentMethod {
   cardExpMonth            Int?           @map("card_exp_month")
   cardExpYear             Int?           @map("card_exp_year")
   isDefault               Boolean        @default(false) @map("is_default")
-  createdAt               DateTime       @default(now()) @map("created_at") @db.DateTime
+  createdAt               DateTime       @default(now()) @map("created_at")
 
   patient                 PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   noShowCharges           NoShowCharge[]
@@ -1440,7 +1440,7 @@ model NoShowCharge {
   paymentMethodId String?        @map("payment_method_id") @db.Char(36)
   status          String         @default("pending") @db.VarChar(20)
   chargedBy       String?        @map("charged_by") @db.Char(36)
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   appointment     Appointment    @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
@@ -1467,7 +1467,7 @@ model AuditLog {
   newValue        Json?    @map("new_value") // MUST be PHI-redacted/hashed delta object. Raw PHI forbidden.
   metadata        Json?
   phiRedacted     Boolean  @default(true) @map("phi_redacted")
-  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime @default(now()) @map("created_at")
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
@@ -1486,7 +1486,7 @@ model PhiAccessLog {
   resourceId      String?  @map("resource_id") @db.Char(36)
   ipAddress       String   @map("ip_address") @db.VarChar(45)
   userAgent       String?  @map("user_agent") @db.Text
-  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime @default(now()) @map("created_at")
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
@@ -1503,7 +1503,7 @@ model PhiExportAudit {
   ipAddress       String          @map("ip_address") @db.VarChar(45)
   userAgent       String?         @map("user_agent") @db.Text
   fileKey         String?         @map("file_key") @db.VarChar(500)
-  createdAt       DateTime        @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime        @default(now()) @map("created_at")
 
   user            User            @relation(fields: [userId], references: [id], onDelete: Restrict)
   patient         PatientProfile? @relation(fields: [patientId], references: [id], onDelete: SetNull)
@@ -1526,8 +1526,8 @@ model BreachReport {
   caAgNotificationDate  DateTime? @map("ca_ag_notification_date") @db.Date
   remediationSteps      String?   @map("remediation_steps") @db.Text
   status                String    @default("reported") @db.VarChar(20)
-  resolvedAt            DateTime? @map("resolved_at") @db.DateTime
-  createdAt             DateTime  @default(now()) @map("created_at") @db.DateTime
+  resolvedAt            DateTime? @map("resolved_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
 
   reporter              User      @relation(fields: [reportedBy], references: [id], onDelete: Restrict)
 
@@ -1543,9 +1543,9 @@ model PolicyVersion {
   effectiveDate   DateTime              @map("effective_date") @db.Date
   reviewDate      DateTime?             @map("review_date") @db.Date
   isCurrent       Boolean               @default(true) @map("is_current")
-  deletedAt       DateTime?             @map("deleted_at") @db.DateTime
+  deletedAt       DateTime?             @map("deleted_at")
   createdBy       String                @map("created_by") @db.Char(36)
-  createdAt       DateTime              @default(now()) @map("created_at") @db.DateTime
+  createdAt       DateTime              @default(now()) @map("created_at")
 
   creator         User                  @relation(fields: [createdBy], references: [id], onDelete: Restrict)
   trainingRecords StaffTrainingRecord[]
@@ -1560,7 +1560,7 @@ model StaffTrainingRecord {
   policyVersionId String        @map("policy_version_id") @db.Char(36)
   trainingName    String        @map("training_name") @db.VarChar(255)
   score           Int?
-  acknowledgedAt  DateTime      @map("acknowledged_at") @db.DateTime
+  acknowledgedAt  DateTime      @map("acknowledged_at")
   signatureData   String?       @map("signature_data") @db.Text
   ipAddress       String?       @map("ip_address") @db.VarChar(45)
 
@@ -1594,8 +1594,8 @@ model ExternalDisclosure {
   purpose           String         @db.Text
   descriptionOfPhi  String         @map("description_of_phi") @db.Text
   disclosedBy       String         @map("disclosed_by") @db.Char(36)
-  disclosedAt       DateTime       @default(now()) @map("disclosed_at") @db.DateTime
-  retentionUntil    DateTime       @map("retention_until") @db.DateTime // 6-year mandatory retention
+  disclosedAt       DateTime       @default(now()) @map("disclosed_at")
+  retentionUntil    DateTime       @map("retention_until") // 6-year mandatory retention
 
   patient           PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   discloser         StaffProfile   @relation(fields: [disclosedBy], references: [id], onDelete: Restrict)
@@ -1616,7 +1616,7 @@ model EmailLog {
   templateName      String   @map("template_name") @db.VarChar(100)
   status            String   @default("sent") @db.VarChar(20)
   providerMessageId String?  @map("provider_message_id") @db.VarChar(255)
-  sentAt            DateTime @default(now()) @map("sent_at") @db.DateTime
+  sentAt            DateTime @default(now()) @map("sent_at")
 
   @@map("email_logs")
 }
@@ -1628,7 +1628,7 @@ model SmsLog {
   messageBody       String   @map("message_body") @db.Text
   status            String   @default("sent") @db.VarChar(20)
   providerMessageId String?  @map("provider_message_id") @db.VarChar(255)
-  sentAt            DateTime @default(now()) @map("sent_at") @db.DateTime
+  sentAt            DateTime @default(now()) @map("sent_at")
 
   @@map("sms_logs")
 }
@@ -1643,8 +1643,8 @@ model NotificationQueue {
   containsPhi     Boolean  @default(false) @map("contains_phi") // Requires BAA-covered channel if true
   status          String   @default("queued") @db.VarChar(20)
   attempts        Int      @default(0)
-  nextAttemptAt   DateTime @default(now()) @map("next_attempt_at") @db.DateTime
-  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime
+  nextAttemptAt   DateTime @default(now()) @map("next_attempt_at")
+  createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([status])
   @@index([containsPhi])
@@ -1658,7 +1658,7 @@ model WebhookLog {
   source          String    @default("stripe") @db.VarChar(50)
   payload         Json
   status          String    @default("processed") @db.VarChar(20)
-  processedAt     DateTime  @default(now()) @map("processed_at") @db.DateTime
+  processedAt     DateTime  @default(now()) @map("processed_at")
 
   @@map("webhook_logs")
 }
@@ -1679,8 +1679,8 @@ model PostOpCheckIn {
   bruisingLevel   String?        @map("bruising_level") @db.VarChar(20)
   patientNotes    String?        @map("patient_notes") @db.Text
   flaggedReason   String?        @map("flagged_reason") @db.Text
-  completedAt     DateTime?      @map("completed_at") @db.DateTime
-  createdAt       DateTime       @default(now()) @map("created_at") @db.DateTime
+  completedAt     DateTime?      @map("completed_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
   encounter       Encounter?     @relation(fields: [encounterId], references: [id], onDelete: SetNull)
@@ -1695,7 +1695,7 @@ model PromResponse {
   surveyType      String         @map("survey_type") @db.VarChar(50)
   responses       Json
   totalScore      Decimal?       @map("total_score") @db.Decimal(5, 2)
-  completedAt     DateTime       @default(now()) @map("completed_at") @db.DateTime
+  completedAt     DateTime       @default(now()) @map("completed_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
@@ -1708,7 +1708,7 @@ model TerminalSettings {
   terminalId        String?  @map("terminal_id") @db.VarChar(100)
   stripeLocationId  String?  @map("stripe_location_id") @db.VarChar(100)
   settings          Json?    @default("{}")
-  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   location          Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
@@ -1721,7 +1721,7 @@ model SmsSnippet {
   body        String   @db.Text
   category    String?  @db.VarChar(50)
   createdBy   String   @map("created_by") @db.Char(36)
-  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("sms_snippets")
 }
@@ -1732,7 +1732,7 @@ model DevicePreset {
   presetName  String    @map("preset_name") @db.VarChar(255)
   settings    Json
   locationId  String?   @map("location_id") @db.Char(36)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime
+  createdAt   DateTime  @default(now()) @map("created_at")
 
   location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
@@ -1745,7 +1745,7 @@ model Reward {
   points          Int            @default(0)
   tier            String         @default("bronze") @db.VarChar(50)
   lifetimePoints  Int            @default(0) @map("lifetime_points")
-  lastEarnedAt    DateTime?      @map("last_earned_at") @db.DateTime
+  lastEarnedAt    DateTime?      @map("last_earned_at")
 
   patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
