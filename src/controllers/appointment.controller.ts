@@ -8,6 +8,13 @@ import { AuthenticatedRequest, ApiResponse } from '../types';
 import { AppointmentStatus } from '@prisma/client';
 
 export class AppointmentController {
+  static async getPendingCount(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await AppointmentService.getPendingCount();
+      res.status(200).json({ success: true, count: result.count, data: result });
+    } catch (error) { next(error); }
+  }
+
   static async createAppointment(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;

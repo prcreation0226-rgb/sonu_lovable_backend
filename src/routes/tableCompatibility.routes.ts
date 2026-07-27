@@ -8,15 +8,22 @@ import { ComplianceService } from '../services/compliance.service';
 import { InventoryService } from '../services/inventory.service';
 import { ConsentService } from '../services/consent.service';
 import { BillingService } from '../services/billing.service';
+import { AppointmentService } from '../services/appointment.service';
 
 const router = Router();
 
 /**
  * Handle GET requests for legacy table endpoints (e.g. /api/breach_reports, /api/vendors)
  */
-router.get('/:tableName', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/:tableName*', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
+
+    if (req.path.includes('pending-count')) {
+      const result = await AppointmentService.getPendingCount();
+      res.status(200).json({ success: true, count: result.count, data: result });
+      return;
+    }
 
     // 1. Breach Reports
     if (tableName === 'breach_reports' || tableName === 'breach_report') {
