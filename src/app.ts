@@ -14,6 +14,9 @@ import { logger } from './utils/logger';
 
 const app = express();
 
+// ---- Trust Proxy for Railway/Cloud Reverse Proxies ----
+app.set('trust proxy', 1);
+
 // ---- Security Headers (Helmet) ----
 app.use(helmet({
   contentSecurityPolicy: env.IS_PRODUCTION ? undefined : false,

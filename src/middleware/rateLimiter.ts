@@ -9,7 +9,7 @@ import { env } from '../config/env';
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per 15 minutes
+  max: 20, // 20 attempts per 15 minutes
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -26,7 +26,7 @@ export const authLimiter = rateLimit({
  */
 export const globalLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: env.RATE_LIMIT_MAX_REQUESTS,
+  max: 1000, // 1000 requests per 15 minutes window
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -36,8 +36,25 @@ export const globalLimiter = rateLimit({
       message: 'Too many requests. Please try again later.',
     },
   },
+  skip: (req) => {
+    // Skip rate limiting for public read-only website endpoints
+    if (req.method === 'GET') {
+      const path = req.path.toLowerCase();
+      if (
+        path.includes('locations') ||
+        path.includes('public_testimonials') ||
+        path.includes('services') ||
+        path.includes('health') ||
+        path.includes('categories')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
   keyGenerator: (req) => {
     return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || req.ip
       || req.socket.remoteAddress
       || 'unknown';
   },
