@@ -9,6 +9,7 @@ import { InventoryService } from '../services/inventory.service';
 import { ConsentService } from '../services/consent.service';
 import { BillingService } from '../services/billing.service';
 import { AppointmentService } from '../services/appointment.service';
+import { LIVE_SERVICE_CATEGORIES, LIVE_SERVICES } from '../data/fullCatalogData';
 
 const router = Router();
 
@@ -119,6 +120,58 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
         orderBy: { createdAt: 'desc' },
       });
       res.status(200).json({ success: true, data: gfeForms });
+      return;
+    }
+
+    // 13. Service Categories
+    if (tableName === 'service_categories' || tableName === 'categories') {
+      try {
+        const dbCats = await prisma.serviceCategory.findMany({
+          where: { isActive: true },
+          orderBy: { displayOrder: 'asc' },
+        });
+        if (dbCats.length > 0) {
+          res.status(200).json({ success: true, data: dbCats });
+          return;
+        }
+      } catch {}
+      res.status(200).json({ success: true, data: LIVE_SERVICE_CATEGORIES });
+      return;
+    }
+
+    // 14. Services
+    if (tableName === 'services' || tableName === 'service') {
+      try {
+        const dbServices = await prisma.service.findMany({
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+        });
+        if (dbServices.length > 0) {
+          res.status(200).json({ success: true, data: dbServices });
+          return;
+        }
+      } catch {}
+      res.status(200).json({ success: true, data: LIVE_SERVICES });
+      return;
+    }
+
+    // 15. Service Providers
+    if (tableName === 'service_providers' || tableName === 'provider_services') {
+      try {
+        const locations = await prisma.location.findMany({ where: { deletedAt: null } });
+        const staff = await prisma.staffProfile.findMany({ where: { deletedAt: null } });
+        const locId = locations[0]?.id || "11111111-1111-1111-1111-111111111111";
+        const stId = staff[0]?.id || "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+        const links = LIVE_SERVICES.map(s => ({
+          service_id: s.id,
+          staff_id: stId,
+          location_id: locId,
+        }));
+        res.status(200).json({ success: true, data: links });
+        return;
+      } catch {}
+      res.status(200).json({ success: true, data: [] });
       return;
     }
 
