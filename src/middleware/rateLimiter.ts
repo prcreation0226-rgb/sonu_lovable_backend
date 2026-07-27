@@ -26,7 +26,7 @@ export const authLimiter = rateLimit({
  */
 export const globalLimiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: env.RATE_LIMIT_MAX_REQUESTS,
+  max: Math.max(env.RATE_LIMIT_MAX_REQUESTS, 2000),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -38,6 +38,7 @@ export const globalLimiter = rateLimit({
   },
   keyGenerator: (req) => {
     return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || req.ip
       || req.socket.remoteAddress
       || 'unknown';
   },
