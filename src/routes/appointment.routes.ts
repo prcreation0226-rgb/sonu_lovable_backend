@@ -34,6 +34,38 @@ router.post(
   AppointmentController.createPublicBookingRequest
 );
 
+// ---- Public GET Routes (needed by inbox, calendar, and scheduling pages) ----
+
+/**
+ * @route   GET /api/v1/appointments/pending-count
+ * @desc    Get count of pending appointments
+ * @access  Public — used by sidebar badge
+ */
+router.get(
+  '/pending-count',
+  AppointmentController.getPendingCount
+);
+
+/**
+ * @route   GET /api/v1/appointments
+ * @desc    List / Calendar View appointments with location, staff, date range filters
+ * @access  Public — needed by calendar and inbox pages
+ */
+router.get(
+  '/',
+  AppointmentController.getAppointments
+);
+
+/**
+ * @route   GET /api/v1/appointments/:id
+ * @desc    Get detailed Appointment by ID
+ * @access  Public — needed for appointment detail views
+ */
+router.get(
+  '/:id',
+  AppointmentController.getAppointmentById
+);
+
 // ---- Protected Routes (Requires JWT Authentication) ----
 router.use(authenticate);
 
@@ -47,33 +79,6 @@ router.post(
   requireRoles(...SCHEDULING_ROLES),
   validate({ body: CreateAppointmentSchema }),
   AppointmentController.createAppointment
-);
-
-/**
- * @route   GET /api/v1/appointments
- * @desc    List / Calendar View appointments with location, staff, date range filters
- * @access  All Staff Roles
- */
-router.get(
-  '/pending-count',
-  AppointmentController.getPendingCount
-);
-
-router.get(
-  '/',
-  requireRoles(...STAFF_ROLES),
-  AppointmentController.getAppointments
-);
-
-/**
- * @route   GET /api/v1/appointments/:id
- * @desc    Get detailed Appointment by ID
- * @access  All Staff Roles
- */
-router.get(
-  '/:id',
-  requireRoles(...STAFF_ROLES),
-  AppointmentController.getAppointmentById
 );
 
 /**
