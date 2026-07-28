@@ -52,12 +52,15 @@ export class LocationController {
 }
 
 const locationRouter = Router();
-locationRouter.use(authenticate);
 
-locationRouter.post('/', requireRoles('admin'), validate({ body: LocationSchema }), LocationController.createLocation);
-locationRouter.get('/', requireRoles(...STAFF_ROLES), LocationController.getLocations);
-locationRouter.get('/:id', requireRoles(...STAFF_ROLES), LocationController.getLocationById);
-locationRouter.patch('/:id', requireRoles('admin'), LocationController.updateLocation);
-locationRouter.delete('/:id', requireRoles('admin'), LocationController.deleteLocation);
+// Public GET routes — location data is non-sensitive and required by the calendar,
+// staff pages, and booking flow before a valid JWT may be present.
+locationRouter.get('/', LocationController.getLocations);
+locationRouter.get('/:id', LocationController.getLocationById);
+
+// Write routes remain protected
+locationRouter.post('/', authenticate, requireRoles('admin'), validate({ body: LocationSchema }), LocationController.createLocation);
+locationRouter.patch('/:id', authenticate, requireRoles('admin'), LocationController.updateLocation);
+locationRouter.delete('/:id', authenticate, requireRoles('admin'), LocationController.deleteLocation);
 
 export default locationRouter;

@@ -15,8 +15,35 @@ import {
 
 const router = Router();
 
-// All staff management routes require authentication
-router.use(authenticate);
+/**
+ * @route   GET /api/v1/staff
+ * @desc    List staff profiles with pagination
+ * @access  Public — needed for calendar, scheduling, and booking pages
+ */
+router.get(
+  '/',
+  StaffController.getStaffProfiles
+);
+
+/**
+ * @route   GET /api/v1/staff/:id
+ * @desc    Get detailed staff profile by ID
+ * @access  Public — needed for profile/availability display
+ */
+router.get(
+  '/:id',
+  StaffController.getStaffById
+);
+
+/**
+ * @route   GET /api/v1/staff/:id/availability
+ * @desc    Get availability schedule for a staff member
+ * @access  Public — needed for scheduling
+ */
+router.get(
+  '/:id/availability',
+  StaffController.getStaffAvailability
+);
 
 /**
  * @route   POST /api/v1/staff
@@ -25,31 +52,10 @@ router.use(authenticate);
  */
 router.post(
   '/',
+  authenticate,
   requireRoles('admin', 'medical_director'),
   validate({ body: CreateStaffProfileSchema }),
   StaffController.createStaffProfile
-);
-
-/**
- * @route   GET /api/v1/staff
- * @desc    List staff profiles with pagination
- * @access  All Staff Roles
- */
-router.get(
-  '/',
-  requireRoles(...STAFF_ROLES),
-  StaffController.getStaffProfiles
-);
-
-/**
- * @route   GET /api/v1/staff/:id
- * @desc    Get detailed staff profile by ID
- * @access  All Staff Roles
- */
-router.get(
-  '/:id',
-  requireRoles(...STAFF_ROLES),
-  StaffController.getStaffById
 );
 
 /**
@@ -59,6 +65,7 @@ router.get(
  */
 router.patch(
   '/:id',
+  authenticate,
   requireRoles('admin', 'medical_director'),
   validate({ body: UpdateStaffProfileSchema }),
   StaffController.updateStaffProfile
@@ -71,6 +78,7 @@ router.patch(
  */
 router.delete(
   '/:id',
+  authenticate,
   requireRoles('admin'),
   StaffController.deleteStaffProfile
 );
@@ -82,6 +90,7 @@ router.delete(
  */
 router.post(
   '/:id/locations',
+  authenticate,
   requireRoles('admin', 'medical_director'),
   validate({ body: AssignStaffLocationSchema }),
   StaffController.assignLocation
@@ -94,20 +103,10 @@ router.post(
  */
 router.post(
   '/:id/availability',
+  authenticate,
   requireRoles('admin', 'medical_director', 'nurse_practitioner', 'scheduler'),
   validate({ body: StaffAvailabilitySchema }),
   StaffController.setAvailability
-);
-
-/**
- * @route   GET /api/v1/staff/:id/availability
- * @desc    Get availability schedule for a staff member
- * @access  All Staff Roles
- */
-router.get(
-  '/:id/availability',
-  requireRoles(...STAFF_ROLES),
-  StaffController.getStaffAvailability
 );
 
 export default router;
