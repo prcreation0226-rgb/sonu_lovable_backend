@@ -154,7 +154,7 @@ export class ComplianceService {
   static async getPolicies() {
     // Try HipaaPolicy table first (new governance model)
     try {
-      const hipaaPolicies = await prisma.hipaaPolicy.findMany({
+      const hipaaPolicies = await (prisma as any).hipaaPolicy.findMany({
         orderBy: [{ category: 'asc' }, { title: 'asc' }],
         include: {
           approvals: {
