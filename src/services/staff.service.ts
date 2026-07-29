@@ -78,9 +78,11 @@ export class StaffService {
   ) {
     const cleanEmail = input.email.trim().toLowerCase();
 
-    const existingUser = await prisma.user.findFirst({ where: { email: cleanEmail, deletedAt: null } });
-    if (existingUser) {
-      throw AppError.conflict('A user with this email already exists');
+    const existingStaff = await prisma.staffProfile.findFirst({
+      where: { email: cleanEmail, deletedAt: null },
+    });
+    if (existingStaff) {
+      throw AppError.conflict(`An account with email "${cleanEmail}" already exists`);
     }
 
     const passwordHash = await bcrypt.hash(input.password || '12345678', 12);
@@ -103,15 +105,29 @@ export class StaffService {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email: cleanEmail,
-          passwordHash,
-          isActive: true,
-        },
-      });
+      let user = await tx.user.findFirst({ where: { email: cleanEmail } });
+
+      if (user) {
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash,
+            isActive: true,
+            deletedAt: null,
+          },
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            email: cleanEmail,
+            passwordHash,
+            isActive: true,
+          },
+        });
+      }
 
       if (role) {
+        await tx.userRole.deleteMany({ where: { userId: user.id } }).catch(() => {});
         await tx.userRole.create({
           data: {
             userId: user.id,
@@ -119,41 +135,67 @@ export class StaffService {
             grantedBy: adminUserId,
           },
         });
-      }
 
-      if (role && input.roleName !== 'staff' && input.roleName !== 'admin') {
-        const staffRole = await tx.role.findFirst({ where: { name: 'staff' } });
-        if (staffRole && staffRole.id !== role.id) {
-          await tx.userRole.create({
-            data: {
-              userId: user.id,
-              roleId: staffRole.id,
-              grantedBy: adminUserId,
-            },
-          }).catch(() => {});
+        if (input.roleName !== 'staff' && input.roleName !== 'admin') {
+          const staffRole = await tx.role.findFirst({ where: { name: 'staff' } });
+          if (staffRole && staffRole.id !== role.id) {
+            await tx.userRole.create({
+              data: {
+                userId: user.id,
+                roleId: staffRole.id,
+                grantedBy: adminUserId,
+              },
+            }).catch(() => {});
+          }
         }
       }
 
-      const staff = await tx.staffProfile.create({
-        data: {
-          userId: user.id,
-          fullName: input.fullName,
-          title: input.title,
-          email: cleanEmail,
-          color: input.color || '#6366f1',
-          isActive: true,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              isActive: true,
-              userRoles: { select: { role: { select: { name: true } } } },
+      const existingProfile = await tx.staffProfile.findFirst({ where: { email: cleanEmail } });
+      let staff;
+      if (existingProfile) {
+        staff = await tx.staffProfile.update({
+          where: { id: existingProfile.id },
+          data: {
+            userId: user.id,
+            fullName: input.fullName,
+            title: input.title,
+            color: input.color || '#6366f1',
+            isActive: true,
+            deletedAt: null,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                isActive: true,
+                userRoles: { select: { role: { select: { name: true } } } },
+              },
             },
           },
-        },
-      });
+        });
+      } else {
+        staff = await tx.staffProfile.create({
+          data: {
+            userId: user.id,
+            fullName: input.fullName,
+            title: input.title,
+            email: cleanEmail,
+            color: input.color || '#6366f1',
+            isActive: true,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                isActive: true,
+                userRoles: { select: { role: { select: { name: true } } } },
+              },
+            },
+          },
+        });
+      }
 
       return staff;
     });
