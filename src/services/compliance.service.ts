@@ -152,6 +152,45 @@ export class ComplianceService {
   }
 
   static async getPolicies() {
+    // Try HipaaPolicy table first (new governance model)
+    try {
+      const hipaaPolicies = await prisma.hipaaPolicy.findMany({
+        orderBy: [{ category: 'asc' }, { title: 'asc' }],
+        include: {
+          approvals: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          },
+        },
+      });
+      if (hipaaPolicies.length > 0) {
+        return hipaaPolicies.map((p: any) => ({
+          id: p.id,
+          slug: p.slug,
+          title: p.title,
+          category: p.category,
+          summary: p.summary,
+          body_markdown: p.bodyMarkdown,
+          version: p.version,
+          status: p.status,
+          approval_status: p.approvalStatus,
+          approved_by_name: p.approvedByName,
+          approved_at: p.approvedAt,
+          effective_date: p.effectiveDate,
+          review_due_date: p.reviewDueDate,
+          updated_at: p.updatedAt,
+          cmia_discovery_date: p.cmiaDiscoveryDate,
+          cmia_notification_deadline: p.cmiaNotificationDeadline,
+          cmia_patient_notification_status: p.cmiaPatientNotifyStatus,
+          cmia_ag_notification_status: p.cmiaAgNotifyStatus,
+          approvals: p.approvals,
+        }));
+      }
+    } catch (e) {
+      // HipaaPolicy table may not exist yet — fall through to legacy
+    }
+
+    // Fallback: legacy PolicyVersion table
     return prisma.policyVersion.findMany({
       where: { deletedAt: null, isCurrent: true },
       orderBy: { effectiveDate: 'desc' },

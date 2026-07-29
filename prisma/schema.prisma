@@ -1533,6 +1533,40 @@ model BreachReport {
 
   @@map("breach_reports")
 }
+// ==========================================
+// HIPAA POLICY GOVERNANCE & COMPLIANCE
+// ==========================================
+
+model HipaaPolicy {
+  id                        String             @id @default(uuid()) @db.Char(36)
+  slug                      String             @unique @db.VarChar(255)
+  title                     String             @db.VarChar(500)
+  category                  String             @db.VarChar(100) // Administrative Safeguards, Technical Safeguards, Physical Safeguards, Privacy Rules
+  summary                   String?            @db.Text
+  bodyMarkdown              String             @map("body_markdown") @db.LongText
+  version                   Int                @default(1)
+  status                    String             @default("draft") @db.VarChar(20) // draft, review, approved, archived
+  approvalStatus            String?            @map("approval_status") @db.VarChar(30) // approved, pending_review, rejected
+  approvedByName            String?            @map("approved_by_name") @db.VarChar(255)
+  approvedAt                DateTime?          @map("approved_at")
+  effectiveDate             String?            @map("effective_date") @db.VarChar(20)
+  reviewDueDate             String?            @map("review_due_date") @db.VarChar(20)
+
+  // California CMIA Breach Response Fields (Civil Code §56.106 / H&S Code §1280.15)
+  cmiaDiscoveryDate         String?            @map("cmia_discovery_date") @db.VarChar(20)
+  cmiaNotificationDeadline  String?            @map("cmia_notification_deadline") @db.VarChar(20)
+  cmiaPatientNotifyStatus   String?            @default("Not Required") @map("cmia_patient_notification_status") @db.VarChar(30)
+  cmiaAgNotifyStatus        String?            @default("Not Required") @map("cmia_ag_notification_status") @db.VarChar(30)
+
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  updatedAt                 DateTime           @updatedAt @map("updated_at")
+
+  approvals                 PolicyApproval[]
+
+  @@index([status])
+  @@index([category])
+  @@map("hipaa_policies")
+}
 
 model PolicyVersion {
   id              String                @id @default(uuid()) @db.Char(36)
@@ -1569,6 +1603,23 @@ model StaffTrainingRecord {
 
   @@unique([staffId, policyVersionId])
   @@map("staff_training_records")
+}
+
+model PolicyApproval {
+  id              String      @id @default(uuid()) @db.Char(36)
+  policyId        String      @map("policy_id") @db.Char(36)
+  action          String      @db.VarChar(100) // created, submitted_for_review, approved, rejected, archived, acknowledged
+  actorName       String      @map("actor_name") @db.VarChar(255)
+  actorRole       String      @map("actor_role") @db.VarChar(100)
+  status          String      @db.VarChar(30) // approved, pending_review, rejected, submitted, acknowledged
+  notes           String?     @db.Text
+  ipAddress       String?     @map("ip_address") @db.VarChar(45)
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  policy          HipaaPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, createdAt(sort: Desc)])
+  @@map("policy_approvals")
 }
 
 model DeviceInventory {
