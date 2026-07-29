@@ -38,8 +38,8 @@ export const LIVE_SERVICES = [
   { id: "svc-04-02", category_id: "cat-04", name: "Hyaluronidase (Filler Dissolving)", description: "Enzyme injection used to dissolve previously placed hyaluronic acid (HA) dermal filler. Used for asymmetry, overcorrection, vascular occlusion, nodules, or migration. Results vary; multiple sessions may be required.", duration_minutes: 45, price_cents: 25000, price_note: "", is_active: true, display_order: 2 },
 
   // 5. Biostimulators
-  { id: "svc-05-01", category_id: "cat-05", name: "Sculptra", description: "Poly-L-lactic acid biostimulator that gradually rebuilds your own collagen to restore facial volume and firmness.", duration_minutes: 60, price_cents: 80000, price_note: "$800 • per vial", is_active: true, display_order: 1 },
-  { id: "svc-05-02", category_id: "cat-05", name: "Radiesse", description: "Calcium-hydroxyapatite biostimulator that delivers immediate lift plus long-term collagen renewal.", duration_minutes: 60, price_cents: 80000, price_note: "$800 • per syringe", is_active: true, display_order: 2 },
+  { id: "svc-05-01", category_id: "cat-05", name: "Sculptra", description: "Poly-L-lactic acid biostimulator that gradually rebuilds your own collagen to restore facial volume and firmness. Series of 2–3 sessions; results last up to 2 years.", duration_minutes: 60, price_cents: 80000, price_note: "per vial", is_active: true, display_order: 1 },
+  { id: "svc-05-02", category_id: "cat-05", name: "Radiesse", description: "Calcium-hydroxyapatite biostimulator that delivers immediate lift plus long-term collagen renewal. Excellent for jawline, cheeks, and hand rejuvenation.", duration_minutes: 60, price_cents: 80000, price_note: "per syringe", is_active: true, display_order: 2 },
 
   // 6. Chemical Peels
   { id: "svc-06-01", category_id: "cat-06", name: "Light Peel", description: "Gentle, lunchtime-friendly chemical peel that exfoliates the surface to brighten dullness and smooth texture.", duration_minutes: 45, price_cents: 15000, price_note: "$150", is_active: true, display_order: 1 },
