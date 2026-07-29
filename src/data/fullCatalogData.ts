@@ -96,7 +96,7 @@ export const LIVE_SERVICES = [
   { id: "svc-12-05", category_id: "cat-12", name: "Generalized follow up", description: "Brief follow-up visit with your provider.", duration_minutes: 15, price_cents: 0, price_note: "Complimentary", is_active: true, display_order: 5 },
 
   // 13. Follow-Ups
-  { id: "svc-13-01", category_id: "cat-13", name: "Follow-Up Visit", description: "Quick check-in and assessment after a prior treatment.", duration_minutes: 30, price_cents: 0, price_note: "Complimentary", is_active: true, display_order: 1 },
+  { id: "svc-13-01", category_id: "cat-13", name: "Follow-Up Visit", description: "Quick check-in and assessment after a prior treatment. No consents required.", duration_minutes: 30, price_cents: 0, price_note: "", is_active: true, display_order: 1 },
 
   // 14. Signature Facials
   { id: "svc-14-01", category_id: "cat-14", name: "Glo2 Facial", description: "Oxygenating facial that deep-cleans pores, exfoliates, and infuses skin with CO₂-activated serums.", duration_minutes: 75, price_cents: 20000, price_note: "$200", is_active: true, display_order: 1 },
