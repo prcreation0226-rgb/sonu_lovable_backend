@@ -20,8 +20,12 @@ async function bootstrap(): Promise<void> {
   try {
     await verifyDatabaseConnection();
   } catch (error) {
-    logger.error('[STARTUP FATAL] Database connection failed. Exiting.');
-    process.exit(1);
+    if (env.IS_PRODUCTION) {
+      logger.error('[STARTUP FATAL] Database connection failed. Exiting.');
+      process.exit(1);
+    } else {
+      logger.warn('[STARTUP] Database connection failed — running in degraded mode (static data only).');
+    }
   }
 
   // ---- Step 2: Verify Redis Connection (non-fatal) ----

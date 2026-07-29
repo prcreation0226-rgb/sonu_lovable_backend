@@ -87,6 +87,7 @@ import inventoryRouter from './routes/inventory.routes';
 import billingRouter from './routes/billing.routes';
 import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
+import availabilityRouter from './routes/availability.routes';
 
 const apiRouters: [string, any][] = [
   ['/auth', authRouter],
@@ -108,6 +109,12 @@ for (const [path, router] of apiRouters) {
     app.use(`${env.API_PREFIX}${path}`, router);
   }
   app.use(`/api${path}`, router);
+}
+
+// Availability endpoints (public, no auth required)
+app.use('/api', availabilityRouter);
+if (env.API_PREFIX !== '/api') {
+  app.use(`${env.API_PREFIX}`, availabilityRouter);
 }
 
 // Table compatibility fallback for legacy endpoints (/api/:tableName)
