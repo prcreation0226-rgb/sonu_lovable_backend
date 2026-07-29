@@ -13,6 +13,8 @@ import { LIVE_SERVICE_CATEGORIES, LIVE_SERVICES } from '../data/fullCatalogData'
 
 const router = Router();
 
+export const globalModelApplications: any[] = [];
+
 /**
  * Handle GET requests for legacy table endpoints (e.g. /api/breach_reports, /api/vendors)
  */
@@ -155,7 +157,11 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // 15. Service Providers
+    // 16. Model Applications
+    if (tableName === 'model_applications' || tableName === 'model_application') {
+      res.status(200).json({ success: true, data: globalModelApplications });
+      return;
+    }
     if (tableName === 'service_providers' || tableName === 'provider_services') {
       try {
         const locations = await prisma.location.findMany({ where: { deletedAt: null } });
@@ -249,6 +255,20 @@ router.post('/:tableName', async (req: Request, res: Response, next: NextFunctio
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
 
+    // Special handling for model_applications
+    if (tableName === 'model_applications' || tableName === 'model_application') {
+      const newApp = {
+        id: req.body.id || `APP-${Math.floor(100 + Math.random() * 900)}`,
+        status: 'pending',
+        date: new Date().toISOString().split('T')[0],
+        created_at: new Date().toISOString(),
+        ...req.body,
+      };
+      globalModelApplications.unshift(newApp);
+      res.status(201).json({ success: true, data: newApp });
+      return;
+    }
+
     // Special handling for client_profiles / patient_profiles
     if (tableName === 'client_profiles' || tableName === 'patient_profiles' || tableName === 'patients') {
       try {
@@ -329,6 +349,20 @@ router.post('/:tableName', async (req: Request, res: Response, next: NextFunctio
 const handleUpdate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
+
+    // Special handling for model_applications
+    if (tableName === 'model_applications' || tableName === 'model_application') {
+      const { id, status } = req.body || {};
+      const found = globalModelApplications.find(a => a.id === id);
+      if (found) {
+        if (status) found.status = status;
+        Object.assign(found, req.body);
+        res.status(200).json({ success: true, data: found });
+        return;
+      }
+      res.status(200).json({ success: true, data: req.body });
+      return;
+    }
 
     // Special handling for client_profiles / patient_profiles
     if (tableName === 'client_profiles' || tableName === 'patient_profiles' || tableName === 'patients') {
