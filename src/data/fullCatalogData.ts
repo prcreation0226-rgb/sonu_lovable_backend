@@ -34,8 +34,8 @@ export const LIVE_SERVICES = [
   { id: "svc-03-05", category_id: "cat-03", name: "Peptide Therapy — In-Person", description: "Peptide therapy including Retatrutide and other compounded peptides.", duration_minutes: 45, price_cents: 25000, price_note: "Includes evaluation + labs · medication not included", is_active: true, display_order: 5 },
 
   // 4. Dermal Fillers
-  { id: "svc-04-01", category_id: "cat-04", name: "Dermal Filler", description: "Hyaluronic-acid filler used to restore lost volume, contour cheeks and jawline, refine lips, and smooth deeper folds.", duration_minutes: 45, price_cents: 60000, price_note: "$600 • per syringe", is_active: true, display_order: 1 },
-  { id: "svc-04-02", category_id: "cat-04", name: "Hyaluronidase (Filler Dissolving)", description: "Enzyme injection used to dissolve previously placed hyaluronic acid dermal filler.", duration_minutes: 45, price_cents: 25000, price_note: "$250", is_active: true, display_order: 2 },
+  { id: "svc-04-01", category_id: "cat-04", name: "Dermal Filler", description: "Hyaluronic-acid filler used to restore lost volume, contour cheeks and jawline, refine lips, and smooth deeper folds. Priced per syringe; longevity 6–18 months.", duration_minutes: 45, price_cents: 60000, price_note: "per syringe", is_active: true, display_order: 1 },
+  { id: "svc-04-02", category_id: "cat-04", name: "Hyaluronidase (Filler Dissolving)", description: "Enzyme injection used to dissolve previously placed hyaluronic acid (HA) dermal filler. Used for asymmetry, overcorrection, vascular occlusion, nodules, or migration. Results vary; multiple sessions may be required.", duration_minutes: 45, price_cents: 25000, price_note: "", is_active: true, display_order: 2 },
 
   // 5. Biostimulators
   { id: "svc-05-01", category_id: "cat-05", name: "Sculptra", description: "Poly-L-lactic acid biostimulator that gradually rebuilds your own collagen to restore facial volume and firmness.", duration_minutes: 60, price_cents: 80000, price_note: "$800 • per vial", is_active: true, display_order: 1 },
