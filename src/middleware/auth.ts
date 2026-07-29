@@ -45,7 +45,7 @@ export function authenticate(
       req.user = {
         id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         email: 'admin@gmail.com',
-        roles: ['admin', 'staff', 'medical_director', 'privacy_officer', 'provider'],
+        roles: ['admin', 'staff', 'medical_director', 'privacy_officer'] as any,
         sessionId: 'demo-session-id',
       };
       req.clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
@@ -53,6 +53,8 @@ export function authenticate(
         || '0.0.0.0';
       return next();
     }
+
+    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
 
     // Populate authenticated user context
     const user: AuthenticatedUser = {
