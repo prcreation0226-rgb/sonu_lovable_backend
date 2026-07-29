@@ -50,6 +50,16 @@ export const globalLimiter = rateLimit({
         return true;
       }
     }
+    // Skip rate limiting for public booking availability endpoints
+    if (req.method === 'POST') {
+      const path = req.path.toLowerCase();
+      if (
+        path.includes('get-availability-range') ||
+        path.includes('get-availability')
+      ) {
+        return true;
+      }
+    }
     return false;
   },
   keyGenerator: (req) => {
