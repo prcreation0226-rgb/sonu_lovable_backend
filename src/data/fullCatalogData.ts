@@ -18,8 +18,8 @@ export const LIVE_SERVICE_CATEGORIES = [
 
 export const LIVE_SERVICES = [
   // 1. Consultations
-  { id: "svc-01-01", category_id: "cat-01", name: "Complimentary Consultation", description: "A 30-minute one-on-one consultation to discuss your aesthetic goals.", duration_minutes: 30, price_cents: 0, price_note: "Complimentary", is_active: true, display_order: 1 },
-  { id: "svc-01-02", category_id: "cat-01", name: "Model Day", description: "Model day session for marketing, model release, and photo/video.", duration_minutes: 120, price_cents: 0, price_note: "Complimentary", is_active: true, display_order: 2 },
+  { id: "svc-01-01", category_id: "cat-01", name: "Complimentary Consultation", description: "A 30-minute one-on-one consultation to discuss your aesthetic goals.", duration_minutes: 30, price_cents: 0, price_note: "complimentary", is_active: true, display_order: 1 },
+  { id: "svc-01-02", category_id: "cat-01", name: "Model Day", description: "Model day session for marketing, model release, and photo/video.", duration_minutes: 120, price_cents: null, price_note: "", is_active: true, display_order: 2 },
 
   // 2. Neurotoxins
   { id: "svc-02-01", category_id: "cat-02", name: "Neurotoxins", description: "Botox or Daxxify injections that relax expression muscles to smooth forehead lines, 11s, and crow's feet. Results appear in 7–14 days and last 3–4 months with Botox, up to ~6 months with Daxxify. Priced per unit.", duration_minutes: 30, price_cents: 1200, price_note: "per unit (Botox, Jeuveau, Xeomin, Letybo)", is_active: true, display_order: 1 },
