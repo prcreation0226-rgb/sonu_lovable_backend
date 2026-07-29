@@ -257,30 +257,79 @@ export class StaffService {
    */
   static async updateStaffProfile(
     staffId: string,
-    input: UpdateStaffProfileInput,
+    input: any,
     adminUserId: string,
     ipAddress: string
   ) {
     const existing = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
     if (!existing) throw AppError.notFound('Staff Profile');
 
+    const fullName = input.fullName || input.full_name || existing.fullName;
+    const title = input.title || existing.title;
+    const email = input.email ? input.email.trim().toLowerCase() : existing.email;
+    const color = input.color || existing.color;
+
     const updated = await prisma.staffProfile.update({
       where: { id: staffId },
       data: {
-        fullName: input.fullName,
-        title: input.title,
-        email: input.email,
-        phone: input.phone,
-        color: input.color,
-        npiNumber: input.npiNumber,
-        licenseNumber: input.licenseNumber,
-        licenseState: input.licenseState,
-        licenseExpiry: input.licenseExpiry ? new Date(input.licenseExpiry) : undefined,
-        isOwner: input.isOwner,
-        hourlyRateCents: input.hourlyRateCents,
-        commissionPercent: input.commissionPercent,
+        fullName,
+        title,
+        email,
+        phone: input.phone !== undefined ? input.phone : existing.phone,
+        color,
+        npiNumber: input.npiNumber !== undefined ? input.npiNumber : existing.npiNumber,
+        licenseNumber: input.licenseNumber !== undefined ? input.licenseNumber : existing.licenseNumber,
+        licenseState: input.licenseState !== undefined ? input.licenseState : existing.licenseState,
+        licenseExpiry: input.licenseExpiry ? new Date(input.licenseExpiry) : existing.licenseExpiry,
+        isOwner: input.isOwner !== undefined ? input.isOwner : existing.isOwner,
+        hourlyRateCents: input.hourlyRateCents !== undefined ? input.hourlyRateCents : existing.hourlyRateCents,
+        commissionPercent: input.commissionPercent !== undefined ? input.commissionPercent : existing.commissionPercent,
       },
     });
+
+    if (existing.userId) {
+      const userUpdateData: any = {};
+      if (email && email !== existing.email) {
+        userUpdateData.email = email;
+      }
+      if (input.password && input.password !== '••••••••' && input.password.trim().length >= 6) {
+        userUpdateData.passwordHash = await bcrypt.hash(input.password.trim(), 12);
+      }
+      if (Object.keys(userUpdateData).length > 0) {
+        await prisma.user.update({
+          where: { id: existing.userId },
+          data: userUpdateData,
+        });
+      }
+
+      const targetRole = input.roleName || input.role;
+      if (targetRole) {
+        let role = await prisma.role.findFirst({ where: { name: targetRole } });
+        if (!role) {
+          try {
+            role = await prisma.role.create({
+              data: { name: targetRole, description: `${targetRole} role` },
+            });
+          } catch {
+            role = await prisma.role.findFirst({ where: { name: targetRole } });
+          }
+        }
+        if (role) {
+          await prisma.userRole.deleteMany({ where: { userId: existing.userId } });
+          await prisma.userRole.create({
+            data: { userId: existing.userId, roleId: role.id, grantedBy: adminUserId },
+          });
+          if (targetRole !== 'staff' && targetRole !== 'admin') {
+            const staffRole = await prisma.role.findFirst({ where: { name: 'staff' } });
+            if (staffRole && staffRole.id !== role.id) {
+              await prisma.userRole.create({
+                data: { userId: existing.userId, roleId: staffRole.id, grantedBy: adminUserId },
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+    }
 
     await writeAuditLog({
       userId: adminUserId,
