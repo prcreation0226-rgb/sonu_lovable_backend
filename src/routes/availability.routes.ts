@@ -11,14 +11,14 @@ const router = Router();
 // Track DB connectivity status to prevent repeated timeout delays when offline
 let isDbAvailable = true;
 
-/** Default clinic hours when no StaffAvailability rows exist. Mon(1)–Sat(6) 11:30–16:15 */
+/** Default clinic hours when no StaffAvailability rows exist. Mon(1)–Sat(6) 11:30–18:15 */
 const DEFAULT_HOURS: Record<number, { start: string; end: string }> = {
-  1: { start: '11:30', end: '16:15' }, // Monday
-  2: { start: '11:30', end: '16:15' }, // Tuesday
-  3: { start: '11:30', end: '16:15' }, // Wednesday
-  4: { start: '11:30', end: '16:15' }, // Thursday
-  5: { start: '11:30', end: '16:15' }, // Friday
-  6: { start: '11:30', end: '16:15' }, // Saturday
+  1: { start: '11:30', end: '18:15' }, // Monday
+  2: { start: '11:30', end: '18:15' }, // Tuesday
+  3: { start: '11:30', end: '18:15' }, // Wednesday
+  4: { start: '11:30', end: '18:15' }, // Thursday
+  5: { start: '11:30', end: '18:15' }, // Friday
+  6: { start: '11:30', end: '18:15' }, // Saturday
   // 0 = Sunday → closed
 };
 
