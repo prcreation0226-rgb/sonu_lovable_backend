@@ -87,6 +87,18 @@ export class StaffService {
 
     let role = await prisma.role.findFirst({ where: { name: input.roleName } });
     if (!role) {
+      try {
+        role = await prisma.role.create({
+          data: {
+            name: input.roleName,
+            description: `${input.roleName.replace(/_/g, ' ')} role`,
+          },
+        });
+      } catch {
+        role = await prisma.role.findFirst({ where: { name: input.roleName } });
+      }
+    }
+    if (!role) {
       role = await prisma.role.findFirst({ where: { name: 'staff' } });
     }
 

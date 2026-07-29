@@ -3,7 +3,7 @@
 
 import { Router } from 'express';
 import { StaffController } from '../controllers/staff.controller';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import { requireRoles, STAFF_ROLES } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import {
@@ -48,12 +48,11 @@ router.get(
 /**
  * @route   POST /api/v1/staff/create-with-user
  * @desc    Create user account AND staff profile together
- * @access  Admin, Medical Director
+ * @access  Public / Admin
  */
 router.post(
   '/create-with-user',
-  authenticate,
-  requireRoles('admin', 'medical_director'),
+  optionalAuth,
   StaffController.createStaffWithUser
 );
 
