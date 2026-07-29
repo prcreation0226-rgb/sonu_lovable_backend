@@ -2,6 +2,7 @@
 // Manages practitioner/staff profiles, state licenses, clinic location assignments, and weekly availability.
 // All actions write audit logs. Soft deletes set deletedAt.
 
+import bcrypt from 'bcrypt';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { writeAuditLog } from '../middleware/audit';
@@ -58,6 +59,103 @@ export class StaffService {
     });
 
     return profile;
+  }
+
+  /**
+   * Create a user account AND staff profile in one transaction.
+   */
+  static async createStaffWithUser(
+    input: {
+      fullName: string;
+      title: string;
+      email: string;
+      password?: string;
+      roleName: string;
+      color?: string;
+    },
+    adminUserId: string,
+    ipAddress: string
+  ) {
+    const cleanEmail = input.email.trim().toLowerCase();
+
+    const existingUser = await prisma.user.findFirst({ where: { email: cleanEmail, deletedAt: null } });
+    if (existingUser) {
+      throw AppError.conflict('A user with this email already exists');
+    }
+
+    const passwordHash = await bcrypt.hash(input.password || '12345678', 12);
+
+    let role = await prisma.role.findFirst({ where: { name: input.roleName } });
+    if (!role) {
+      role = await prisma.role.findFirst({ where: { name: 'staff' } });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: cleanEmail,
+          passwordHash,
+          isActive: true,
+        },
+      });
+
+      if (role) {
+        await tx.userRole.create({
+          data: {
+            userId: user.id,
+            roleId: role.id,
+            grantedBy: adminUserId,
+          },
+        });
+      }
+
+      if (role && input.roleName !== 'staff' && input.roleName !== 'admin') {
+        const staffRole = await tx.role.findFirst({ where: { name: 'staff' } });
+        if (staffRole && staffRole.id !== role.id) {
+          await tx.userRole.create({
+            data: {
+              userId: user.id,
+              roleId: staffRole.id,
+              grantedBy: adminUserId,
+            },
+          }).catch(() => {});
+        }
+      }
+
+      const staff = await tx.staffProfile.create({
+        data: {
+          userId: user.id,
+          fullName: input.fullName,
+          title: input.title,
+          email: cleanEmail,
+          color: input.color || '#6366f1',
+          isActive: true,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              isActive: true,
+              userRoles: { select: { role: { select: { name: true } } } },
+            },
+          },
+        },
+      });
+
+      return staff;
+    });
+
+    await writeAuditLog({
+      userId: adminUserId,
+      action: 'STAFF_PROFILE_CREATED',
+      resourceType: 'staff_profile',
+      resourceId: result.id,
+      ipAddress,
+      newValue: { fullName: result.fullName, title: result.title, email: result.email },
+    });
+
+    return result;
   }
 
   /**
@@ -186,18 +284,30 @@ export class StaffService {
   }
 
   /**
-   * Soft-delete Staff Profile.
+   * Soft-delete Staff Profile AND linked User account.
    */
   static async deleteStaffProfile(staffId: string, adminUserId: string, ipAddress: string) {
     const existing = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
     if (!existing) throw AppError.notFound('Staff Profile');
 
-    await prisma.staffProfile.update({
-      where: { id: staffId },
-      data: {
-        deletedAt: new Date(),
-        isActive: false,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.staffProfile.update({
+        where: { id: staffId },
+        data: {
+          deletedAt: new Date(),
+          isActive: false,
+        },
+      });
+
+      if (existing.userId) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            deletedAt: new Date(),
+            isActive: false,
+          },
+        });
+      }
     });
 
     await writeAuditLog({

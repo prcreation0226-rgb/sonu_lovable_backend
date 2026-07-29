@@ -46,6 +46,18 @@ router.get(
 );
 
 /**
+ * @route   POST /api/v1/staff/create-with-user
+ * @desc    Create user account AND staff profile together
+ * @access  Admin, Medical Director
+ */
+router.post(
+  '/create-with-user',
+  authenticate,
+  requireRoles('admin', 'medical_director'),
+  StaffController.createStaffWithUser
+);
+
+/**
  * @route   POST /api/v1/staff
  * @desc    Create staff profile for a user account
  * @access  Admin, Medical Director
