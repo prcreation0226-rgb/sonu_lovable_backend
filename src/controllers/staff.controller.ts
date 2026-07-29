@@ -7,6 +7,29 @@ import { AuthenticatedRequest, ApiResponse } from '../types';
 
 export class StaffController {
   /**
+   * POST /api/v1/staff/create-with-user
+   * Protected (admin, medical_director) — Create both a User account AND Staff Profile in one step.
+   */
+  static async createStaffWithUser(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUserId = req.user?.id || 'admin';
+      const ip = (req.clientIp || '0.0.0.0') as string;
+
+      const staff = await StaffService.createStaffWithUser(req.body, adminUserId, ip);
+
+      const response: ApiResponse = {
+        success: true,
+        data: staff,
+        message: 'Staff profile and user account created successfully',
+      };
+
+      res.status(201).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/v1/staff
    * Protected (admin, medical_director) — Create a staff profile for a user.
    */
