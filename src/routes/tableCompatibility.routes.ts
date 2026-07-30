@@ -99,16 +99,44 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
     if (tableName === 'staff_profiles' || tableName === 'staff' || tableName === 'staff_directory') {
       const staff = await prisma.staffProfile.findMany({
         where: { deletedAt: null },
-        include: { user: { select: { id: true, email: true, isActive: true } } },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              isActive: true,
+              userRoles: { select: { role: { select: { name: true } } } },
+            },
+          },
+        },
       });
-      const mapped = staff.map(s => ({
-        ...s,
-        full_name: s.fullName || (s as any).full_name || 'Staff Member',
-        fullName: s.fullName || (s as any).full_name || 'Staff Member',
-        title: s.title || 'Aesthetic Specialist',
-        color: s.color || '#8B6B5D',
-      }));
-      res.status(200).json({ success: true, data: mapped });
+      const mapped = staff.map(s => {
+        const rolesList = s.user?.userRoles?.map((ur: any) => ur.role?.name) || [];
+        const primaryRole = rolesList.find((r: string) => r !== "staff") || rolesList[0] || (s as any).role || "staff";
+        return {
+          ...s,
+          full_name: s.fullName || (s as any).full_name || 'Staff Member',
+          fullName: s.fullName || (s as any).full_name || 'Staff Member',
+          title: s.title || 'Aesthetic Specialist',
+          color: s.color || '#8B6B5D',
+          role: primaryRole,
+        };
+      });
+
+      let finalData = mapped;
+      if (tableName === 'staff_directory' || req.query.onlyProviders === 'true') {
+        const providerStaff = mapped.filter(s => {
+          const r = (s.role || '').toLowerCase();
+          const t = (s.title || '').toLowerCase();
+          const n = (s.full_name || '').toLowerCase();
+          return r === 'provider' || r === 'nurse_practitioner' || t.includes('provider') || n.includes('girish');
+        });
+        if (providerStaff.length > 0) {
+          finalData = providerStaff;
+        }
+      }
+
+      res.status(200).json({ success: true, data: finalData });
       return;
     }
 
