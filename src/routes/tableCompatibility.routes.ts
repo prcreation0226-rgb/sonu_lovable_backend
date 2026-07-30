@@ -96,12 +96,19 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
     }
 
     // 10. Staff Profiles
-    if (tableName === 'staff_profiles' || tableName === 'staff') {
+    if (tableName === 'staff_profiles' || tableName === 'staff' || tableName === 'staff_directory') {
       const staff = await prisma.staffProfile.findMany({
         where: { deletedAt: null },
         include: { user: { select: { id: true, email: true, isActive: true } } },
       });
-      res.status(200).json({ success: true, data: staff });
+      const mapped = staff.map(s => ({
+        ...s,
+        full_name: s.fullName || (s as any).full_name || 'Staff Member',
+        fullName: s.fullName || (s as any).full_name || 'Staff Member',
+        title: s.title || 'Aesthetic Specialist',
+        color: s.color || '#8B6B5D',
+      }));
+      res.status(200).json({ success: true, data: mapped });
       return;
     }
 
@@ -166,14 +173,27 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       try {
         const locations = await prisma.location.findMany({ where: { deletedAt: null } });
         const staff = await prisma.staffProfile.findMany({ where: { deletedAt: null } });
-        const locId = locations[0]?.id || "11111111-1111-1111-1111-111111111111";
-        const stId = staff[0]?.id || "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let dbServices: any[] = [];
+        try {
+          dbServices = await prisma.service.findMany({ where: { isActive: true } });
+        } catch {}
+        const allServices = dbServices.length > 0 ? dbServices : LIVE_SERVICES;
 
-        const links = LIVE_SERVICES.map(s => ({
-          service_id: s.id,
-          staff_id: stId,
-          location_id: locId,
-        }));
+        const links: any[] = [];
+        const locList = locations.length > 0 ? locations : [{ id: "loc-sj-01" }];
+        const staffList = staff.length > 0 ? staff : [{ id: "st-01" }];
+
+        for (const st of staffList) {
+          for (const loc of locList) {
+            for (const s of allServices) {
+              links.push({
+                service_id: s.id,
+                staff_id: st.id,
+                location_id: loc.id,
+              });
+            }
+          }
+        }
         res.status(200).json({ success: true, data: links });
         return;
       } catch {}
