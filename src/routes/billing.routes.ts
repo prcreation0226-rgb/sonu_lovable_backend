@@ -25,7 +25,7 @@ router.use(authenticate);
 
 router.post(
   '/invoices',
-  requireRoles('admin', 'receptionist', 'scheduler'),
+  requireRoles('admin', 'front_desk'),
   validate({ body: CreateInvoiceSchema }),
   auditPhiAccess('patient_profile', 'create'),
   BillingController.createInvoice
@@ -55,7 +55,7 @@ router.get(
 
 router.post(
   '/payments',
-  requireRoles('admin', 'receptionist'),
+  requireRoles('admin', 'front_desk'),
   validate({ body: RecordPaymentSchema }),
   auditPhiAccess('patient_profile', 'create'),
   BillingController.recordPayment
@@ -90,7 +90,7 @@ router.get(
 
 router.post(
   '/no-show-charges',
-  requireRoles('admin', 'receptionist'),
+  requireRoles('admin', 'front_desk'),
   validate({ body: CreateNoShowChargeSchema }),
   BillingController.createNoShowCharge
 );

@@ -124,7 +124,7 @@ router.post(
  */
 router.post(
   '/staff/:staffId/time-off',
-  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'scheduler'),
+  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'rn_injector', 'front_desk'),
   validate({ body: StaffTimeOffSchema }),
   AppointmentController.createStaffTimeOff
 );

@@ -107,15 +107,15 @@ export function denyRoles(...deniedRoles: UserRoleName[]) {
 // ---- Convenience Role Groups ----
 
 /** Clinical staff who can view/edit medical records */
-export const CLINICAL_ROLES: UserRoleName[] = ['admin', 'medical_director', 'nurse_practitioner'];
+export const CLINICAL_ROLES: UserRoleName[] = ['admin', 'medical_director', 'nurse_practitioner', 'rn_injector'];
 
 /** All internal staff (non-patient) */
 export const STAFF_ROLES: UserRoleName[] = [
-  'admin', 'medical_director', 'nurse_practitioner', 'staff', 'scheduler', 'receptionist', 'privacy_officer',
+  'admin', 'medical_director', 'nurse_practitioner', 'rn_injector', 'privacy_officer', 'front_desk',
 ];
 
 /** Compliance and administration roles */
 export const COMPLIANCE_ROLES: UserRoleName[] = ['admin', 'privacy_officer'];
 
 /** Scheduling roles */
-export const SCHEDULING_ROLES: UserRoleName[] = ['admin', 'scheduler', 'receptionist', 'nurse_practitioner'];
+export const SCHEDULING_ROLES: UserRoleName[] = ['admin', 'front_desk', 'nurse_practitioner', 'rn_injector', 'medical_director'];

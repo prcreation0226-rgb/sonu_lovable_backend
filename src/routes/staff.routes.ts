@@ -115,7 +115,7 @@ router.post(
 router.post(
   '/:id/availability',
   authenticate,
-  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'scheduler'),
+  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'rn_injector', 'front_desk'),
   validate({ body: StaffAvailabilitySchema }),
   StaffController.setAvailability
 );
