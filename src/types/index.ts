@@ -4,15 +4,24 @@
 import { Request } from 'express';
 
 // ---- Role Definitions ----
+// 6 staff roles + patient portal role.
+// Removed legacy: 'staff', 'scheduler', 'receptionist', 'provider'.
+// Merged scheduler+receptionist → front_desk; added rn_injector.
 export type UserRoleName =
   | 'admin'
   | 'medical_director'
   | 'nurse_practitioner'
-  | 'staff'
-  | 'scheduler'
-  | 'receptionist'
+  | 'rn_injector'
   | 'privacy_officer'
+  | 'front_desk'
   | 'patient';
+
+/** Roles eligible to appear as bookable clinical providers */
+export const CLINICAL_PROVIDER_ROLES: UserRoleName[] = [
+  'medical_director',
+  'nurse_practitioner',
+  'rn_injector',
+];
 
 // ---- Authenticated Request ----
 export interface AuthenticatedUser {

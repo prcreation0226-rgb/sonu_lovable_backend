@@ -8,13 +8,12 @@ import bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 const ROLES = [
-  { name: 'admin', description: 'Full system administrator with all permissions' },
-  { name: 'medical_director', description: 'Supervising physician — cosign authority, clinical oversight' },
-  { name: 'nurse_practitioner', description: 'Clinical provider — SOAP notes, treatments, prescriptions' },
-  { name: 'staff', description: 'General staff — limited clinical and administrative access' },
-  { name: 'scheduler', description: 'Appointment scheduling and calendar management' },
-  { name: 'receptionist', description: 'Front desk — check-in, basic patient info, payments' },
-  { name: 'privacy_officer', description: 'HIPAA compliance, audit logs, breach reports, policies' },
+  { name: 'admin', description: 'Full system administrator — staff management, settings, billing, reports' },
+  { name: 'medical_director', description: 'Supervising physician — clinical oversight, SOAP note cosign, provider approval' },
+  { name: 'nurse_practitioner', description: 'Clinical provider — patient treatments, encounters, SOAP notes, prescriptions' },
+  { name: 'rn_injector', description: 'RN / Injector — clinical notes, perform treatments, submit for MD/NP cosign' },
+  { name: 'privacy_officer', description: 'Privacy & Security Officer — HIPAA policies, audit logs, breach reports, compliance' },
+  { name: 'front_desk', description: 'Front Desk / Scheduler — appointment booking, patient check-in, calendar management' },
   { name: 'patient', description: 'Patient portal access — own records, appointments, consents' },
 ];
 
@@ -91,24 +90,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'consents:read', 'consents:write',
     'services:read',
   ],
-  staff: [
-    'patients:read',
-    'encounters:read',
+  rn_injector: [
+    'patients:read', 'patients:write',
+    'encounters:read', 'encounters:write',
+    'soap_notes:read', 'soap_notes:write',
     'appointments:read', 'appointments:write',
     'inventory:read', 'inventory:write',
-    'payments:read', 'payments:process',
-    'consents:read',
-    'services:read',
-  ],
-  scheduler: [
-    'patients:read',
-    'appointments:read', 'appointments:write', 'appointments:cancel',
-    'services:read',
-  ],
-  receptionist: [
-    'patients:read', 'patients:write',
-    'appointments:read', 'appointments:write',
-    'payments:read', 'payments:process',
+    'payments:read',
     'consents:read',
     'services:read',
   ],
@@ -118,6 +106,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'breach_reports:read', 'breach_reports:write',
     'policies:read', 'policies:write',
     'users:read',
+  ],
+  front_desk: [
+    'patients:read', 'patients:write',
+    'appointments:read', 'appointments:write', 'appointments:cancel',
+    'payments:read', 'payments:process',
+    'consents:read',
+    'services:read',
   ],
   patient: [],
 };
@@ -149,11 +144,11 @@ const USERS_TO_SEED = [
   },
   {
     email: 'staff@gmail.com',
-    role: 'staff',
+    role: 'front_desk',
     firstName: 'Jessica',
-    lastName: 'Taylor, RN',
+    lastName: 'Taylor',
     isStaff: true,
-    title: 'Aesthetic Specialist',
+    title: 'Front Desk Coordinator',
   },
   {
     email: 'user@gmail.com',
