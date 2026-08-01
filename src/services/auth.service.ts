@@ -485,7 +485,7 @@ export class AuthService {
     const session = await prisma.session.create({
       data: {
         userId,
-        token: 'pending',
+        token: `pending_${Date.now()}_${Math.random()}`,
         ipAddress,
         userAgent: userAgent.substring(0, 500),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
@@ -496,7 +496,7 @@ export class AuthService {
     const refreshTokenRecord = await prisma.refreshToken.create({
       data: {
         userId,
-        token: 'pending',
+        token: `pending_${Date.now()}_${Math.random()}`,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
