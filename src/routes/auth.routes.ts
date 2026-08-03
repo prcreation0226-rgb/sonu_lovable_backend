@@ -36,14 +36,14 @@ router.post('/mfa/login-verify', authLimiter, validate({ body: MfaLoginSchema })
  * @desc    Rotate refresh token (from HttpOnly cookie) and issue new access token
  * @access  Public (requires valid refresh token cookie)
  */
-router.post('/refresh', authLimiter, AuthController.refreshToken);
+router.post('/refresh', AuthController.refreshToken);
 
 /**
  * @route   POST /api/v1/auth/refresh-token
  * @desc    DEPRECATED — Compatibility alias for /refresh. Will be removed.
  * @access  Public (requires valid refresh token cookie)
  */
-router.post('/refresh-token', authLimiter, AuthController.refreshToken);
+router.post('/refresh-token', AuthController.refreshToken);
 
 // ---- Protected Routes (Requires JWT Access Token) ----
 
