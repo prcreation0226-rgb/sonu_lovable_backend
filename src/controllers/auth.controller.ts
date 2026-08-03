@@ -265,4 +265,21 @@ export class AuthController {
       next(error);
     }
   }
+
+  /**
+   * POST /api/v1/auth/seed-test-accounts
+   * Seeds dedicated Phase 1C test accounts in live database.
+   */
+  static async seedTestAccounts(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const seeded = await AuthService.seedTestAccounts();
+      res.status(200).json({
+        success: true,
+        data: seeded,
+        message: 'Phase 1C test accounts seeded successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

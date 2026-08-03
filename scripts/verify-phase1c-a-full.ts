@@ -234,9 +234,9 @@ async function runFullSuite() {
   const r29 = await makeRequest(`${API_BASE}/auth/me`, { headers: { cookie: 'rka_access=expired_user' } });
   results.push({ num: 29, name: 'INACTIVE_USER_BLOCKED check', expectedStatus: 401, actualStatus: r29.status, status: (r29.status === 401 || r29.status === 403) ? 'PASS' : 'FAIL' });
 
-  // Test 30: Public/token route smoke test -> controlled 404 (Not 200 or 500)
-  const r30 = await makeRequest(`${API_BASE}/patient/intake/invalid-token-123`);
-  results.push({ num: 30, name: 'Token route invalid token return controlled 404', expectedStatus: 404, actualStatus: r30.status, status: (r30.status === 404 || r30.status === 400 || r30.status === 401) ? 'PASS' : 'FAIL' });
+  // Test 30: Public/token route smoke test -> controlled 404/401
+  const r30 = await makeRequest(`${API_BASE}/patients/public-intake-token/invalid-token-123`);
+  results.push({ num: 30, name: 'Token route invalid token return controlled 404/401', expectedStatus: 404, actualStatus: r30.status, status: (r30.status === 404 || r30.status === 401 || r30.status === 400) ? 'PASS' : 'FAIL' });
 
   console.log('\n----------------------------------------------------------------');
   console.log('RESULTS TABLE:');

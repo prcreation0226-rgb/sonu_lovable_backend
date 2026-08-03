@@ -740,4 +740,66 @@ export class AuthService {
       summaryTable: rows,
     };
   }
+
+  /**
+   * Seed dedicated Phase 1C test accounts directly in live MySQL database.
+   */
+  static async seedTestAccounts(): Promise<any> {
+    const passwordHash = await bcrypt.hash('Phase1Test!2026', 10);
+
+    const accounts = [
+      { email: 'phase1-admin@radiantilyk.com', roles: ['admin'], isActive: true, deletedAt: null },
+      { email: 'phase1-fd@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: null },
+      { email: 'phase1-np@radiantilyk.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null },
+      { email: 'phase1-rn@radiantilyk.com', roles: ['rn_injector'], isActive: true, deletedAt: null },
+      { email: 'phase1-md@radiantilyk.com', roles: ['medical_director'], isActive: true, deletedAt: null },
+      { email: 'phase1-po@radiantilyk.com', roles: ['privacy_officer'], isActive: true, deletedAt: null },
+      { email: 'phase1-patient@radiantilyk.com', roles: ['patient'], isActive: true, deletedAt: null },
+      { email: 'phase1-multi@radiantilyk.com', roles: ['admin', 'medical_director'], isActive: true, deletedAt: null },
+      { email: 'phase1-inactive@radiantilyk.com', roles: ['front_desk'], isActive: false, deletedAt: null },
+      { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date() },
+    ];
+
+    const results = [];
+
+    for (const acc of accounts) {
+      let user = await prisma.user.findFirst({ where: { email: acc.email } });
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            email: acc.email,
+            passwordHash,
+            isActive: acc.isActive,
+            deletedAt: acc.deletedAt,
+          },
+        });
+      } else {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash,
+            isActive: acc.isActive,
+            deletedAt: acc.deletedAt,
+          },
+        });
+      }
+
+      await prisma.userRole.deleteMany({ where: { userId: user.id } });
+
+      for (const roleName of acc.roles) {
+        let role = await prisma.role.findUnique({ where: { name: roleName } });
+        if (!role) {
+          role = await prisma.role.create({ data: { name: roleName, description: `${roleName} role` } });
+        }
+
+        await prisma.userRole.create({
+          data: { userId: user.id, roleId: role.id },
+        });
+      }
+
+      results.push({ email: acc.email, userId: user.id, roles: acc.roles, isActive: acc.isActive, isDeleted: !!acc.deletedAt });
+    }
+
+    return results;
+  }
 }

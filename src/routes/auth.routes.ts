@@ -52,6 +52,13 @@ router.post('/refresh-token', AuthController.refreshToken);
  */
 router.post('/verify-phase1a', AuthController.verifyPhase1a);
 
+/**
+ * @route   POST /api/v1/auth/seed-test-accounts
+ * @desc    Seed dedicated Phase 1C test accounts in live database
+ * @access  Public
+ */
+router.post('/seed-test-accounts', AuthController.seedTestAccounts);
+
 // ---- Protected Routes (Requires JWT Access Token) ----
 
 /**
