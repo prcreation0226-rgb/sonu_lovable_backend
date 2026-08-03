@@ -792,7 +792,16 @@ export class AuthService {
       { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date() },
     ];
 
-    const results = [];
+    await prisma.user.updateMany({
+      where: { email: { in: accounts.map((a) => a.email) } },
+      data: {
+        passwordHash,
+        failedAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+
+    const results: any[] = [];
 
     for (const acc of accounts) {
       let user = await prisma.user.findFirst({ where: { email: acc.email } });
