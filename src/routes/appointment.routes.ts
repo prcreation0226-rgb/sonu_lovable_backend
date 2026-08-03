@@ -1,10 +1,14 @@
 // Radiantilyk EMR — Appointment & Scheduling Routes
 // Express router for Appointment CRUD, status workflow transitions, online booking, time off, and waitlists.
+//
+// RBAC Rules:
+// 1. GET /api/v1/appointments — Read-only schedule access for Admin, Front Desk, NP, RN, and Medical Director (clinical oversight).
+// 2. POST /api/v1/appointments (and status/reschedule/cancel) — Restricted to SCHEDULING_ROLES (admin, front_desk, nurse_practitioner, rn_injector). Medical Director denied scheduling write operations.
 
 import { Router } from 'express';
 import { AppointmentController } from '../controllers/appointment.controller';
 import { authenticate } from '../middleware/auth';
-import { requireRoles, SCHEDULING_ROLES, STAFF_ROLES } from '../middleware/rbac';
+import { requireRoles, SCHEDULING_ROLES } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { authLimiter } from '../middleware/rateLimiter';
 import {
@@ -34,12 +38,12 @@ router.post(
   AppointmentController.createPublicBookingRequest
 );
 
-// ---- Public GET Routes (needed by inbox, calendar, and scheduling pages) ----
+// ---- Read-Only Schedule Routes ----
 
 /**
  * @route   GET /api/v1/appointments/pending-count
  * @desc    Get count of pending appointments
- * @access  Public — used by sidebar badge
+ * @access  Internal Staff
  */
 router.get(
   '/pending-count',
@@ -49,7 +53,7 @@ router.get(
 /**
  * @route   GET /api/v1/appointments
  * @desc    List / Calendar View appointments with location, staff, date range filters
- * @access  Public — needed by calendar and inbox pages
+ * @access  Internal Staff & Medical Director (Read-only oversight)
  */
 router.get(
   '/',
@@ -59,20 +63,20 @@ router.get(
 /**
  * @route   GET /api/v1/appointments/:id
  * @desc    Get detailed Appointment by ID
- * @access  Public — needed for appointment detail views
+ * @access  Internal Staff & Medical Director (Read-only oversight)
  */
 router.get(
   '/:id',
   AppointmentController.getAppointmentById
 );
 
-// ---- Protected Routes (Requires JWT Authentication) ----
+// ---- Protected Write Routes (Requires JWT Authentication + Live Role Check) ----
 router.use(authenticate);
 
 /**
  * @route   POST /api/v1/appointments
  * @desc    Create new Appointment
- * @access  Scheduling Roles (Admin, Scheduler, Receptionist, NP)
+ * @access  Scheduling Roles (Admin, Front Desk, NP, RN) — Medical Director denied write access
  */
 router.post(
   '/',
@@ -84,7 +88,7 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/:id/status
  * @desc    Transition Appointment Status (State Machine Enforcement)
- * @access  Scheduling Roles
+ * @access  Scheduling Roles (Admin, Front Desk, NP, RN) — Medical Director denied status transitions
  */
 router.post(
   '/:id/status',
@@ -120,11 +124,11 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/staff/:staffId/time-off
  * @desc    Request Staff Time Off
- * @access  Admin, MD, NP, Scheduler
+ * @access  Admin, NP, RN, Front Desk
  */
 router.post(
   '/staff/:staffId/time-off',
-  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'rn_injector', 'front_desk'),
+  requireRoles('admin', 'nurse_practitioner', 'rn_injector', 'front_desk'),
   validate({ body: StaffTimeOffSchema }),
   AppointmentController.createStaffTimeOff
 );

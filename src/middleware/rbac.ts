@@ -1,17 +1,21 @@
 // Radiantilyk EMR — Role-Based Access Control (RBAC) Middleware
-// Enforces role-based and permission-based access on protected routes.
-// Roles: admin, medical_director, nurse_practitioner, staff, scheduler, receptionist, privacy_officer, patient
+// Enforces action-level and role-based access on protected routes.
+//
+// Role Alignment (Option A):
+// 1. Clinical Reviews: MD-only (medical_director). Admin denied unless MD role assigned.
+// 2. Prescription issue/approval: MD-only (medical_director). Admin denied unless MD role assigned.
+// 3. Scheduling Write Actions: admin, front_desk, nurse_practitioner, rn_injector. MD has read-only schedule access.
+// 4. Privacy Officer: Read-only minimal staff directory access. Write actions denied.
 
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest, UserRoleName, ErrorCodes } from '../types';
 import { AppError } from '../utils/AppError';
 import { logger, logSecurityEvent } from '../utils/logger';
+import { prisma } from '../config/database';
 
 /**
  * Require the authenticated user to have AT LEAST ONE of the specified roles.
- * 
- * Usage:
- *   router.get('/admin/dashboard', authenticate, requireRoles('admin', 'privacy_officer'), handler);
+ * Supports multi-role users with union of assigned server roles.
  */
 export function requireRoles(...allowedRoles: UserRoleName[]) {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
@@ -19,7 +23,7 @@ export function requireRoles(...allowedRoles: UserRoleName[]) {
       return next(new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID));
     }
 
-    const userRoles = req.user.roles;
+    const userRoles = req.user.roles || [];
     const hasRole = allowedRoles.some((role) => userRoles.includes(role));
 
     if (!hasRole) {
@@ -29,6 +33,23 @@ export function requireRoles(...allowedRoles: UserRoleName[]) {
         req.clientIp || '0.0.0.0',
         `User ${req.user.id} (roles: ${userRoles.join(',')}) attempted to access route requiring ${allowedRoles.join('|')} — ${req.method} ${req.originalUrl}`
       );
+
+      // Audit Log Event (Requirement 11.H)
+      prisma.authAuditLog.create({
+        data: {
+          userId: req.user.id,
+          email: req.user.email,
+          eventType: 'AUTHORIZATION_DENIED',
+          ipAddress: req.clientIp || '0.0.0.0',
+          userAgent: (req.headers['user-agent'] as string) || null,
+          metadata: {
+            method: req.method,
+            url: req.originalUrl,
+            userRoles,
+            requiredRoles: allowedRoles,
+          },
+        },
+      }).catch(() => {});
 
       return next(
         new AppError(
@@ -45,7 +66,6 @@ export function requireRoles(...allowedRoles: UserRoleName[]) {
 
 /**
  * Require the user to have ALL of the specified roles (conjunction).
- * Useful for operations requiring multiple role confirmations.
  */
 export function requireAllRoles(...requiredRoles: UserRoleName[]) {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
@@ -53,7 +73,7 @@ export function requireAllRoles(...requiredRoles: UserRoleName[]) {
       return next(new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID));
     }
 
-    const userRoles = req.user.roles;
+    const userRoles = req.user.roles || [];
     const hasAllRoles = requiredRoles.every((role) => userRoles.includes(role));
 
     if (!hasAllRoles) {
@@ -63,6 +83,22 @@ export function requireAllRoles(...requiredRoles: UserRoleName[]) {
         req.clientIp || '0.0.0.0',
         `User ${req.user.id} missing required roles ${requiredRoles.join(',')} for ${req.method} ${req.originalUrl}`
       );
+
+      prisma.authAuditLog.create({
+        data: {
+          userId: req.user.id,
+          email: req.user.email,
+          eventType: 'AUTHORIZATION_DENIED',
+          ipAddress: req.clientIp || '0.0.0.0',
+          userAgent: (req.headers['user-agent'] as string) || null,
+          metadata: {
+            method: req.method,
+            url: req.originalUrl,
+            userRoles,
+            requiredRoles,
+          },
+        },
+      }).catch(() => {});
 
       return next(
         new AppError(
@@ -79,7 +115,6 @@ export function requireAllRoles(...requiredRoles: UserRoleName[]) {
 
 /**
  * Deny access to specific roles (blacklist).
- * Useful for preventing patients from accessing staff-only resources.
  */
 export function denyRoles(...deniedRoles: UserRoleName[]) {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
@@ -87,10 +122,26 @@ export function denyRoles(...deniedRoles: UserRoleName[]) {
       return next(new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID));
     }
 
-    const userRoles = req.user.roles;
+    const userRoles = req.user.roles || [];
     const isDenied = deniedRoles.some((role) => userRoles.includes(role));
 
     if (isDenied) {
+      prisma.authAuditLog.create({
+        data: {
+          userId: req.user.id,
+          email: req.user.email,
+          eventType: 'AUTHORIZATION_DENIED',
+          ipAddress: req.clientIp || '0.0.0.0',
+          userAgent: (req.headers['user-agent'] as string) || null,
+          metadata: {
+            method: req.method,
+            url: req.originalUrl,
+            userRoles,
+            deniedRoles,
+          },
+        },
+      }).catch(() => {});
+
       return next(
         new AppError(
           'You do not have permission to access this resource',
@@ -117,5 +168,5 @@ export const STAFF_ROLES: UserRoleName[] = [
 /** Compliance and administration roles */
 export const COMPLIANCE_ROLES: UserRoleName[] = ['admin', 'privacy_officer'];
 
-/** Scheduling roles */
-export const SCHEDULING_ROLES: UserRoleName[] = ['admin', 'front_desk', 'nurse_practitioner', 'rn_injector', 'medical_director'];
+/** Scheduling write roles (MD excluded — MD has read-only oversight) */
+export const SCHEDULING_ROLES: UserRoleName[] = ['admin', 'front_desk', 'nurse_practitioner', 'rn_injector'];

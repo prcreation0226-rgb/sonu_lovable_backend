@@ -17,6 +17,7 @@ export type PhiResourceType =
   | 'medical_history'
   | 'allergy'
   | 'medication'
+  | 'prescription'
   | 'soap_note'
   | 'encounter'
   | 'patient_document'

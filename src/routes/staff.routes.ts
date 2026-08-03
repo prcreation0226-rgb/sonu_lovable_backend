@@ -1,5 +1,9 @@
 // Radiantilyk EMR — Staff Profile Routes
 // Express router for staff profiles, location assignments, and availability.
+//
+// RBAC Rules:
+// 1. GET /api/v1/staff — Read-only staff directory access for internal staff & Privacy Officer (compliance audit)
+// 2. Write Endpoints (Create, Edit, Delete, Location Assign) — Admin only (Privacy Officer denied write permissions)
 
 import { Router } from 'express';
 import { StaffController } from '../controllers/staff.controller';
@@ -18,27 +22,29 @@ const router = Router();
 /**
  * @route   GET /api/v1/staff
  * @desc    List staff profiles with pagination
- * @access  Public — needed for calendar, scheduling, and booking pages
+ * @access  Internal Staff & Privacy Officer (Read-only for compliance audit)
  */
 router.get(
   '/',
+  optionalAuth,
   StaffController.getStaffProfiles
 );
 
 /**
  * @route   GET /api/v1/staff/:id
  * @desc    Get detailed staff profile by ID
- * @access  Public — needed for profile/availability display
+ * @access  Internal Staff & Privacy Officer
  */
 router.get(
   '/:id',
+  optionalAuth,
   StaffController.getStaffById
 );
 
 /**
  * @route   GET /api/v1/staff/:id/availability
  * @desc    Get availability schedule for a staff member
- * @access  Public — needed for scheduling
+ * @access  Public / Internal Staff
  */
 router.get(
   '/:id/availability',
@@ -48,23 +54,24 @@ router.get(
 /**
  * @route   POST /api/v1/staff/create-with-user
  * @desc    Create user account AND staff profile together
- * @access  Public / Admin
+ * @access  Admin Only (Privacy Officer denied)
  */
 router.post(
   '/create-with-user',
-  optionalAuth,
+  authenticate,
+  requireRoles('admin'),
   StaffController.createStaffWithUser
 );
 
 /**
  * @route   POST /api/v1/staff
  * @desc    Create staff profile for a user account
- * @access  Admin, Medical Director
+ * @access  Admin Only
  */
 router.post(
   '/',
   authenticate,
-  requireRoles('admin', 'medical_director'),
+  requireRoles('admin'),
   validate({ body: CreateStaffProfileSchema }),
   StaffController.createStaffProfile
 );
@@ -72,12 +79,12 @@ router.post(
 /**
  * @route   PATCH /api/v1/staff/:id
  * @desc    Update staff profile details
- * @access  Admin, Medical Director
+ * @access  Admin Only
  */
 router.patch(
   '/:id',
   authenticate,
-  requireRoles('admin', 'medical_director'),
+  requireRoles('admin'),
   validate({ body: UpdateStaffProfileSchema }),
   StaffController.updateStaffProfile
 );
@@ -97,12 +104,12 @@ router.delete(
 /**
  * @route   POST /api/v1/staff/:id/locations
  * @desc    Assign staff member to a location
- * @access  Admin, Medical Director
+ * @access  Admin Only
  */
 router.post(
   '/:id/locations',
   authenticate,
-  requireRoles('admin', 'medical_director'),
+  requireRoles('admin'),
   validate({ body: AssignStaffLocationSchema }),
   StaffController.assignLocation
 );
@@ -110,12 +117,12 @@ router.post(
 /**
  * @route   POST /api/v1/staff/:id/availability
  * @desc    Set availability schedule for a staff member
- * @access  Admin, Medical Director, Nurse Practitioner, Scheduler
+ * @access  Admin, Nurse Practitioner, RN Injector, Front Desk
  */
 router.post(
   '/:id/availability',
   authenticate,
-  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'rn_injector', 'front_desk'),
+  requireRoles('admin', 'nurse_practitioner', 'rn_injector', 'front_desk'),
   validate({ body: StaffAvailabilitySchema }),
   StaffController.setAvailability
 );

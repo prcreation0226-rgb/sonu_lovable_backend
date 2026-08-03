@@ -1,15 +1,21 @@
 // Radiantilyk EMR — Authentication Middleware
-// Phase 1A: Reads JWT access token from HttpOnly cookie (primary)
+// Phase 1A + Phase 1C-A: Reads JWT access token from HttpOnly cookie (primary)
 // with fallback to Authorization: Bearer header (transition compatibility).
-// Populates req.user with authenticated user context for downstream handlers.
+//
+// Live Database Role Freshness (Requirement 11.E):
+// - Verifies user exists in live MySQL database
+// - Verifies user isActive === true and deletedAt === null
+// - Fetches live server roles from live MySQL on every protected request
+// - Account deactivation/role changes take effect immediately
 
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { AuthenticatedRequest, AuthenticatedUser, ErrorCodes } from '../types';
+import { AuthenticatedRequest, AuthenticatedUser, UserRoleName, ErrorCodes } from '../types';
 import { AppError } from '../utils/AppError';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { extractAccessToken } from '../utils/cookies';
+import { prisma } from '../config/database';
 
 interface JwtPayload {
   sub: string;       // userId
@@ -21,15 +27,13 @@ interface JwtPayload {
 }
 
 /**
- * Authentication middleware — verifies JWT access token.
- * Reads from HttpOnly cookie first, then Authorization header.
- * Attaches user context to request object.
+ * Authentication middleware — verifies JWT access token and validates live MySQL user state & roles.
  */
-export function authenticate(
+export async function authenticate(
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   try {
     const token = extractAccessToken(req);
 
@@ -39,21 +43,55 @@ export function authenticate(
 
     const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
 
-    // Populate authenticated user context
+    // Resolve client IP (through reverse proxy)
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || req.socket.remoteAddress
+      || '0.0.0.0';
+    req.clientIp = clientIp;
+
+    // Live Database Role & Active User Validation (Requirement 11.E)
+    const dbUser = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+        deletedAt: true,
+        userRoles: {
+          select: {
+            role: { select: { name: true } }
+          }
+        }
+      }
+    });
+
+    if (!dbUser || !dbUser.isActive || dbUser.deletedAt) {
+      // Record INACTIVE_USER_BLOCKED audit event safely (Requirement 11.E & 11.H)
+      await prisma.authAuditLog.create({
+        data: {
+          userId: decoded.sub,
+          email: decoded.email,
+          eventType: 'INACTIVE_USER_BLOCKED',
+          ipAddress: clientIp,
+          userAgent: (req.headers['user-agent'] as string) || null,
+          metadata: { reason: 'Account inactive, deleted, or revoked' },
+        }
+      }).catch(() => {});
+
+      throw new AppError('Account is inactive or has been disabled', 403, ErrorCodes.FORBIDDEN);
+    }
+
+    const liveRoles = dbUser.userRoles.map((ur) => ur.role.name) as UserRoleName[];
+
+    // Populate authenticated user context with live database roles
     const user: AuthenticatedUser = {
-      id: decoded.sub,
-      email: decoded.email,
-      roles: decoded.roles as AuthenticatedUser['roles'],
+      id: dbUser.id,
+      email: dbUser.email,
+      roles: liveRoles,
       sessionId: decoded.sessionId,
     };
 
     req.user = user;
-
-    // Resolve client IP (through reverse proxy)
-    req.clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-      || req.socket.remoteAddress
-      || '0.0.0.0';
-
     next();
   } catch (error) {
     if (error instanceof AppError) {
@@ -75,11 +113,10 @@ export function authenticate(
 
 /**
  * Optional authentication — does not reject unauthenticated requests.
- * Used for endpoints that behave differently for logged-in vs anonymous users.
  */
 export function optionalAuth(
   req: AuthenticatedRequest,
-  _res: Response,
+  res: Response,
   next: NextFunction
 ): void {
   const token = extractAccessToken(req);
@@ -88,10 +125,8 @@ export function optionalAuth(
     return next(); // Continue without user context
   }
 
-  // Delegate to full authenticate but catch errors
-  authenticate(req, _res, (err) => {
+  authenticate(req, res, (err) => {
     if (err) {
-      // Silently continue without auth for optional endpoints
       return next();
     }
     next();
