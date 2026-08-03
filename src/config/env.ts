@@ -49,9 +49,7 @@ export const env = {
   JWT_REFRESH_EXPIRES_IN: optionalEnv('JWT_REFRESH_EXPIRES_IN', '7d'),
 
   // Refresh Token HMAC (dedicated secret for hashing refresh tokens stored in DB)
-  REFRESH_TOKEN_HMAC_SECRET: process.env.NODE_ENV === 'production'
-    ? requireEnv('REFRESH_TOKEN_HMAC_SECRET')
-    : optionalEnv('REFRESH_TOKEN_HMAC_SECRET', requireEnv('JWT_REFRESH_SECRET')),
+  REFRESH_TOKEN_HMAC_SECRET: optionalEnv('REFRESH_TOKEN_HMAC_SECRET', requireEnv('JWT_REFRESH_SECRET')),
 
   // Encryption
   ENCRYPTION_KEY: requireEnv('ENCRYPTION_KEY'),
