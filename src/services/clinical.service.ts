@@ -356,4 +356,18 @@ export class ClinicalService {
       },
     });
   }
+
+  /**
+   * Get List of SOAP Notes (Patient / Chart query).
+   */
+  static async getSoapNotes(patientId?: string) {
+    const where: any = { deletedAt: null };
+    if (patientId) where.patientId = patientId;
+
+    return prisma.soapNote.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
 }

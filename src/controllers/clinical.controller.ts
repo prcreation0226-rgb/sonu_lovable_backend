@@ -106,6 +106,15 @@ export class ClinicalController {
     } catch (error) { next(error); }
   }
 
+  static async getSoapNotes(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const patientId = req.query.patientId as string | undefined;
+      const notes = await ClinicalService.getSoapNotes(patientId);
+
+      res.status(200).json({ success: true, data: notes });
+    } catch (error) { next(error); }
+  }
+
   // ---- MD-Only Actions (Option A Alignment) ----
 
   static async getClinicalReviews(_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {

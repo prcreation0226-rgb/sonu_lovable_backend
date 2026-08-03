@@ -76,7 +76,7 @@ router.get(
   '/notes',
   requireRoles(...CLINICAL_ROLES),
   auditPhiAccess('soap_note', 'view'),
-  ClinicalController.getCosignQueue
+  ClinicalController.getSoapNotes
 );
 
 /**
