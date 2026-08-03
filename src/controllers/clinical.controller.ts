@@ -57,6 +57,26 @@ export class ClinicalController {
     } catch (error) { next(error); }
   }
 
+  static async signOwnNote(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const signed = await ClinicalService.signSoapNote(req.params.id as string, req.body, userId, ip);
+
+      res.status(200).json({ success: true, data: signed, message: 'Own SOAP note signed / submitted for cosign successfully' });
+    } catch (error) { next(error); }
+  }
+
+  static async cosignNote(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const signed = await ClinicalService.signSoapNote(req.params.id as string, req.body, userId, ip);
+
+      res.status(200).json({ success: true, data: signed, message: 'SOAP note cosigned and locked by supervising provider successfully' });
+    } catch (error) { next(error); }
+  }
+
   static async signSoapNote(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;

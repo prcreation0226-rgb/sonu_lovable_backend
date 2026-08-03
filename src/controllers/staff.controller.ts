@@ -8,7 +8,7 @@ import { AuthenticatedRequest, ApiResponse } from '../types';
 export class StaffController {
   /**
    * POST /api/v1/staff/create-with-user
-   * Protected (admin, medical_director) — Create both a User account AND Staff Profile in one step.
+   * Protected (admin only) — Create both a User account AND Staff Profile in one step.
    */
   static async createStaffWithUser(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -31,7 +31,7 @@ export class StaffController {
 
   /**
    * POST /api/v1/staff
-   * Protected (admin, medical_director) — Create a staff profile for a user.
+   * Protected (admin only) — Create a staff profile for a user.
    */
   static async createStaffProfile(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -54,7 +54,7 @@ export class StaffController {
 
   /**
    * GET /api/v1/staff
-   * Protected (staff roles) — List staff profiles.
+   * Protected (staff roles) — List staff profiles with role-specific field projections (Minimum Necessary Principle).
    */
   static async getStaffProfiles(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -64,9 +64,39 @@ export class StaffController {
 
       const result = await StaffService.getStaffProfiles(page, limit, activeOnly);
 
+      const userRoles = (req as AuthenticatedRequest).user?.roles || [];
+      const isAdmin = userRoles.includes('admin');
+      const isPrivacyOfficer = userRoles.includes('privacy_officer');
+
+      const sanitizedStaff = (result.staff || []).map((s: any) => {
+        if (isAdmin) return s; // Full authorized management response
+
+        if (isPrivacyOfficer) {
+          // Privacy Officer: Minimum audit/compliance fields only
+          return {
+            id: s.id,
+            user_id: s.user_id || s.userId,
+            full_name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || s.fullName || s.name,
+            email: s.user?.email || s.email,
+            roles: s.user?.userRoles?.map((ur: any) => ur.role?.name) || s.roles,
+            is_active: s.user?.isActive ?? s.isActive,
+            created_at: s.createdAt || s.created_at,
+          };
+        }
+
+        // Provider oversight / Sanitized scheduling directory fields (Front Desk, NP, RN, MD)
+        return {
+          id: s.id,
+          full_name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || s.fullName || s.name,
+          title: s.title,
+          specialties: s.specialties,
+          is_active: s.user?.isActive ?? s.isActive,
+        };
+      });
+
       const response: ApiResponse = {
         success: true,
-        data: result.staff,
+        data: sanitizedStaff,
         meta: result.meta,
       };
 
@@ -98,7 +128,7 @@ export class StaffController {
 
   /**
    * PATCH /api/v1/staff/:id
-   * Protected (admin, medical_director) — Update staff profile details.
+   * Protected (admin only) — Update staff profile details.
    */
   static async updateStaffProfile(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -122,7 +152,7 @@ export class StaffController {
 
   /**
    * DELETE /api/v1/staff/:id
-   * Protected (admin) — Soft-delete a staff profile.
+   * Protected (admin only) — Soft-delete a staff profile.
    */
   static async deleteStaffProfile(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -145,7 +175,7 @@ export class StaffController {
 
   /**
    * POST /api/v1/staff/:id/locations
-   * Protected (admin, medical_director) — Assign staff member to a location.
+   * Protected (admin only) — Assign staff member to a location.
    */
   static async assignLocation(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -169,7 +199,7 @@ export class StaffController {
 
   /**
    * POST /api/v1/staff/:id/availability
-   * Protected (admin, medical_director, nurse_practitioner, scheduler) — Set availability schedule.
+   * Protected (admin, nurse_practitioner, rn_injector, front_desk) — Set availability schedule.
    */
   static async setAvailability(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {

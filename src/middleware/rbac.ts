@@ -168,5 +168,5 @@ export const STAFF_ROLES: UserRoleName[] = [
 /** Compliance and administration roles */
 export const COMPLIANCE_ROLES: UserRoleName[] = ['admin', 'privacy_officer'];
 
-/** Scheduling write roles (MD excluded — MD has read-only oversight) */
-export const SCHEDULING_ROLES: UserRoleName[] = ['admin', 'front_desk', 'nurse_practitioner', 'rn_injector'];
+/** Scheduling write roles (admin and front_desk only; NP, RN, and MD denied scheduling write actions) */
+export const SCHEDULING_ROLES: UserRoleName[] = ['admin', 'front_desk'];

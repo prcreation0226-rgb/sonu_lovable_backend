@@ -68,6 +68,18 @@ router.patch(
 // ---- SOAP Notes & Cosign Workflow ----
 
 /**
+ * @route   GET /api/v1/clinical/notes
+ * @desc    List SOAP notes for patient / clinical chart
+ * @access  Clinical Providers (Admin, MD, NP, RN) — Denied to Front Desk, Privacy Officer, Patient
+ */
+router.get(
+  '/notes',
+  requireRoles(...CLINICAL_ROLES),
+  auditPhiAccess('soap_note', 'view'),
+  ClinicalController.getCosignQueue
+);
+
+/**
  * @route   POST /api/v1/clinical/soap-notes
  * @desc    Create new SOAP Note (Draft / Pending Cosign / Signed)
  * @access  Clinical Providers (MD, NP, RN, Admin)
@@ -94,9 +106,35 @@ router.patch(
 );
 
 /**
+ * @route   POST /api/v1/clinical/soap-notes/:id/sign-own
+ * @desc    Sign own note / Submit draft for required cosign
+ * @access  RN Injector, Nurse Practitioner, Medical Director (Author of note)
+ */
+router.post(
+  '/soap-notes/:id/sign-own',
+  requireRoles('rn_injector', 'nurse_practitioner', 'medical_director'),
+  validate({ body: SignSoapNoteSchema }),
+  auditPhiAccess('soap_note', 'update'),
+  ClinicalController.signOwnNote
+);
+
+/**
+ * @route   POST /api/v1/clinical/soap-notes/:id/cosign
+ * @desc    Cosign & lock another provider's SOAP note (Supervising Provider workflow)
+ * @access  Medical Director, Nurse Practitioner — RN Injector & Admin denied unless NP/MD role assigned
+ */
+router.post(
+  '/soap-notes/:id/cosign',
+  requireRoles('medical_director', 'nurse_practitioner'),
+  validate({ body: SignSoapNoteSchema }),
+  auditPhiAccess('soap_note', 'update'),
+  ClinicalController.cosignNote
+);
+
+/**
  * @route   POST /api/v1/clinical/soap-notes/:id/sign
- * @desc    Sign & Lock SOAP Note (Supervising Provider Cosign Workflow)
- * @access  Supervising Providers (Medical Director, Nurse Practitioner) — RN & Admin denied unless NP/MD role assigned
+ * @desc    Sign & Lock SOAP Note (Generic compatibility path)
+ * @access  Supervising Providers (Medical Director, Nurse Practitioner)
  */
 router.post(
   '/soap-notes/:id/sign',
