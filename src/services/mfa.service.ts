@@ -485,4 +485,30 @@ export class MfaService {
 
     return { success: true };
   }
+
+  /**
+   * Look up a userId from an MFA challenge token without verifying the TOTP code.
+   * Used by the recovery code flow to identify the user from a pending MFA challenge.
+   */
+  static async getUserIdFromChallengeToken(challengeToken: string): Promise<string | null> {
+    const challenges = await prisma.mfaChallenge.findMany({
+      where: {
+        expiresAt: { gt: new Date() },
+        verifiedAt: null,
+      },
+    });
+
+    for (const ch of challenges) {
+      try {
+        const decryptedToken = decryptMfaSecret(ch.challengeTokenEncrypted);
+        if (decryptedToken === challengeToken) {
+          return ch.userId;
+        }
+      } catch (e) {
+        // Skip non-matching decryption
+      }
+    }
+
+    return null;
+  }
 }

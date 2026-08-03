@@ -124,9 +124,8 @@ export class MfaController {
       if (authUser) {
         userId = authUser.id;
       } else if (challengeToken) {
-        // Find challenge to obtain userId
-        const chResult = await MfaService.verifyChallenge(challengeToken, '000000', clientIp).catch(() => null);
-        if (chResult) userId = chResult.userId;
+        // Look up userId from pending MFA challenge token
+        userId = await MfaService.getUserIdFromChallengeToken(challengeToken);
       }
 
       if (!userId) {

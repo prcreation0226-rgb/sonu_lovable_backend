@@ -259,6 +259,13 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
+  const currentStep = Math.floor(Date.now() / 30000);
+  let nextStep = Math.floor(Date.now() / 30000);
+  while (nextStep === currentStep) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    nextStep = Math.floor(Date.now() / 30000);
+  }
+
   // Re-login to get fresh challenge
   const mfaLoginFresh = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
