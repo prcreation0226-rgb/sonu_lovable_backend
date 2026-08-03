@@ -127,7 +127,7 @@ export class StaffService {
       }
 
       if (role) {
-        await tx.userRole.deleteMany({ where: { userId: user.id } }).catch(() => {});
+        await tx.userRole.deleteMany({ where: { userId: user.id } }).catch(() => { });
         await tx.userRole.create({
           data: {
             userId: user.id,
@@ -145,7 +145,7 @@ export class StaffService {
                 roleId: staffRole.id,
                 grantedBy: adminUserId,
               },
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
       }
@@ -366,7 +366,7 @@ export class StaffService {
             if (staffRole && staffRole.id !== role.id) {
               await prisma.userRole.create({
                 data: { userId: existing.userId, roleId: staffRole.id, grantedBy: adminUserId },
-              }).catch(() => {});
+              }).catch(() => { });
             }
           }
         }
