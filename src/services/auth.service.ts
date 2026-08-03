@@ -792,12 +792,23 @@ export class AuthService {
       { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date() },
     ];
 
+    await prisma.mfaChallenge.deleteMany({
+      where: { user: { email: { in: accounts.map((a) => a.email) } } },
+    }).catch(() => {});
+    await prisma.mfaFactor.deleteMany({
+      where: { user: { email: { in: accounts.map((a) => a.email) } } },
+    }).catch(() => {});
+    await prisma.mfaRecoveryCode.deleteMany({
+      where: { user: { email: { in: accounts.map((a) => a.email) } } },
+    }).catch(() => {});
+
     await prisma.user.updateMany({
       where: { email: { in: accounts.map((a) => a.email) } },
       data: {
         passwordHash,
         failedAttempts: 0,
         lockedUntil: null,
+        mfaEnabled: false,
       },
     });
 

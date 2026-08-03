@@ -208,8 +208,24 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 8: Login when user has active MFA factor triggers MFA challenge
+  const npLogin1 = await makeRequest('POST', '/auth/login', {
+    email: 'phase1-np@radiantilyk.com',
+    password: 'Phase1Test!2026',
+  });
+  const npCookies1 = npLogin1.cookies;
+
+  const npStartRes = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, npCookies1);
+  const npFactorId = npStartRes.body.data?.factorId;
+  const npSecret = npStartRes.body.data?.secret;
+  const npCode = authenticator.generate(npSecret);
+
+  await makeRequest('POST', '/auth/mfa/enroll/verify', {
+    factorId: npFactorId,
+    code: npCode,
+  }, npCookies1);
+
   const mfaLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-admin@radiantilyk.com',
+    email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
   });
 
@@ -243,12 +259,18 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
-  const validChallengeCode = authenticator.generate(totpSecret);
+  // Re-login to get fresh challenge
+  const mfaLoginFresh = await makeRequest('POST', '/auth/login', {
+    email: 'phase1-np@radiantilyk.com',
+    password: 'Phase1Test!2026',
+  });
+
+  const validChallengeCode = authenticator.generate(npSecret);
   const mfaChallengeRes = await makeRequest(
     'POST',
     '/auth/mfa/challenge/verify',
     { code: validChallengeCode },
-    mfaLogin.cookies
+    mfaLoginFresh.cookies
   );
 
   const mfaAccessCookies = mfaChallengeRes.cookies;
@@ -267,7 +289,7 @@ async function runMfaVerificationSuite() {
   if (recoveryCodes.length > 0) {
     const firstRecoveryCode = recoveryCodes[0];
     
-    // Trigger new MFA challenge
+    // Trigger new MFA challenge for admin
     const mfaLogin2 = await makeRequest('POST', '/auth/login', {
       email: 'phase1-admin@radiantilyk.com',
       password: 'Phase1Test!2026',
