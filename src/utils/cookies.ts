@@ -33,7 +33,7 @@ function accessCookieOptions(maxAge?: number): CookieOptions {
     httpOnly: true,
     secure: isProd,
     sameSite: isProd ? ('none' as const) : ('lax' as const),
-    path: '/api',
+    path: '/',
     ...(maxAge !== undefined ? { maxAge } : {}),
   };
 }
@@ -49,7 +49,7 @@ function refreshCookieOptions(maxAge?: number): CookieOptions {
     httpOnly: true,
     secure: isProd,
     sameSite: isProd ? ('none' as const) : ('lax' as const),
-    path: '/api/auth',
+    path: '/',
     ...(maxAge !== undefined ? { maxAge } : {}),
   };
 }
