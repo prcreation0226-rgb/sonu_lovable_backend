@@ -31,7 +31,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
     const tableName = (req.params.tableName as string).toLowerCase();
 
     // Do not hijack core protected module endpoints with generic table fallback
-    const protectedModules = ['clinical', 'patients', 'appointments', 'staff', 'compliance', 'auth', 'billing', 'inventory'];
+    const protectedModules = ['clinical', 'patient', 'patients', 'appointment', 'appointments', 'staff', 'compliance', 'auth', 'billing', 'inventory'];
     if (protectedModules.includes(tableName)) {
       return next();
     }
