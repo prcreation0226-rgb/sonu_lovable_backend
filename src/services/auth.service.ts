@@ -81,8 +81,14 @@ export class AuthService {
           }
         }
 
-        const newUser = await prisma.user.create({
-          data: {
+        const newUser = await prisma.user.upsert({
+          where: { email: cleanEmail },
+          update: {
+            deletedAt: null,
+            isActive: true,
+            passwordHash,
+          },
+          create: {
             email: cleanEmail,
             passwordHash,
             isActive: true,
@@ -90,8 +96,12 @@ export class AuthService {
         });
 
         if (staffRole) {
-          await prisma.userRole.create({
-            data: {
+          await prisma.userRole.upsert({
+            where: {
+              userId_roleId: { userId: newUser.id, roleId: staffRole.id }
+            },
+            update: {},
+            create: {
               userId: newUser.id,
               roleId: staffRole.id,
             },
