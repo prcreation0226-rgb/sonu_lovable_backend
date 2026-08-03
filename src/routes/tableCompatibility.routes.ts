@@ -30,6 +30,12 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
 
+    // Do not hijack core protected module endpoints with generic table fallback
+    const protectedModules = ['clinical', 'patients', 'appointments', 'staff', 'compliance', 'auth', 'billing', 'inventory'];
+    if (protectedModules.includes(tableName)) {
+      return next();
+    }
+
     if (req.path.includes('pending-count')) {
       const result = await AppointmentService.getPendingCount();
       res.status(200).json({ success: true, count: result.count, data: result });
