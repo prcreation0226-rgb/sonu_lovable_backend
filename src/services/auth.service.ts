@@ -65,7 +65,6 @@ export class AuthService {
     });
 
     if (!user) {
-<<<<<<< HEAD
       // Auto-provision User if StaffProfile exists with this email
       const staffProfile = await prisma.staffProfile.findFirst({
         where: { email: cleanEmail, deletedAt: null },
@@ -127,11 +126,8 @@ export class AuthService {
       }
     }
 
-    if (!user || !user.isActive || user.deletedAt) {
-      await this.recordAuthAudit(null, cleanEmail, 'LOGIN_FAILED', ipAddress, userAgent, { reason: 'User not found or inactive' });
-=======
+    if (!user) {
       await this.recordAuthAudit(null, cleanEmail, 'LOGIN_FAILED', ipAddress, userAgent, { reason: 'User not found' });
->>>>>>> 636cc7819ebb0fefbbb983bdee252ed74e227ce3
       logAuthEvent('LOGIN_FAILED', cleanEmail, ipAddress, false);
       throw AppError.unauthorized('Invalid email or password');
     }
