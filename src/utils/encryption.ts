@@ -68,3 +68,11 @@ export function decrypt(encryptedData: string): string {
 export function hashSha256(value: string): string {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
+
+/**
+ * HMAC-SHA256 with a dedicated secret key.
+ * Used for refresh token hashing so we can look up tokens by their hash in the DB.
+ */
+export function hmacSha256(value: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(value, 'utf8').digest('hex');
+}

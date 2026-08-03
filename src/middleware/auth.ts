@@ -1,7 +1,7 @@
-// Radiantilyk EMR — Authentication Middleware Foundation
-// Extracts and verifies JWT access tokens from Authorization header.
+// Radiantilyk EMR — Authentication Middleware
+// Phase 1A: Reads JWT access token from HttpOnly cookie (primary)
+// with fallback to Authorization: Bearer header (transition compatibility).
 // Populates req.user with authenticated user context for downstream handlers.
-// Does NOT implement the full auth flow yet — just the middleware skeleton.
 
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
@@ -9,6 +9,7 @@ import { AuthenticatedRequest, AuthenticatedUser, ErrorCodes } from '../types';
 import { AppError } from '../utils/AppError';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
+import { extractAccessToken } from '../utils/cookies';
 
 interface JwtPayload {
   sub: string;       // userId
@@ -21,6 +22,7 @@ interface JwtPayload {
 
 /**
  * Authentication middleware — verifies JWT access token.
+ * Reads from HttpOnly cookie first, then Authorization header.
  * Attaches user context to request object.
  */
 export function authenticate(
@@ -29,29 +31,10 @@ export function authenticate(
   next: NextFunction
 ): void {
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID);
-    }
-
-    const token = authHeader.split(' ')[1];
+    const token = extractAccessToken(req);
 
     if (!token) {
       throw new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID);
-    }
-
-    if (token === 'demo-token' || token === 'demo-jwt-token' || token.startsWith('demo-')) {
-      req.user = {
-        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        email: 'admin@gmail.com',
-        roles: ['admin', 'staff', 'medical_director', 'privacy_officer'] as any,
-        sessionId: 'demo-session-id',
-      };
-      req.clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-        || req.socket.remoteAddress
-        || '0.0.0.0';
-      return next();
     }
 
     const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
@@ -99,9 +82,9 @@ export function optionalAuth(
   _res: Response,
   next: NextFunction
 ): void {
-  const authHeader = req.headers.authorization;
+  const token = extractAccessToken(req);
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!token) {
     return next(); // Continue without user context
   }
 

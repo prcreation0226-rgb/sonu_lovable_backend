@@ -9,10 +9,12 @@
 // - Audit Trail: Every auth event logged to auth_audit_logs
 
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { authenticator } from 'otplib';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
-import { encrypt, decrypt } from '../utils/encryption';
+import { encrypt, decrypt, hmacSha256 } from '../utils/encryption';
+import { env } from '../config/env';
 import { signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToken } from '../utils/jwt';
 import { UserRoleName, ErrorCodes } from '../types';
 import { logger, logAuthEvent, logSecurityEvent } from '../utils/logger';
@@ -63,6 +65,7 @@ export class AuthService {
     });
 
     if (!user) {
+<<<<<<< HEAD
       // Auto-provision User if StaffProfile exists with this email
       const staffProfile = await prisma.staffProfile.findFirst({
         where: { email: cleanEmail, deletedAt: null },
@@ -126,8 +129,18 @@ export class AuthService {
 
     if (!user || !user.isActive || user.deletedAt) {
       await this.recordAuthAudit(null, cleanEmail, 'LOGIN_FAILED', ipAddress, userAgent, { reason: 'User not found or inactive' });
+=======
+      await this.recordAuthAudit(null, cleanEmail, 'LOGIN_FAILED', ipAddress, userAgent, { reason: 'User not found' });
+>>>>>>> 636cc7819ebb0fefbbb983bdee252ed74e227ce3
       logAuthEvent('LOGIN_FAILED', cleanEmail, ipAddress, false);
       throw AppError.unauthorized('Invalid email or password');
+    }
+
+    // Inactive or soft-deleted accounts get 403
+    if (!user.isActive || user.deletedAt) {
+      await this.recordAuthAudit(user.id, cleanEmail, 'LOGIN_FAILED', ipAddress, userAgent, { reason: 'Account inactive or deleted' });
+      logAuthEvent('LOGIN_FAILED', cleanEmail, ipAddress, false);
+      throw AppError.forbidden('Account is inactive or has been deleted');
     }
 
     // 2. Check if account is locked
@@ -142,18 +155,7 @@ export class AuthService {
     }
 
     // 3. Verify password
-    let isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-
-    // Self-healing fallback for initial demo/seed accounts if password mismatch occurs with default 12345678
-    if (!isPasswordValid && (password === '12345678' || password === 'admin123')) {
-      const newHash = await bcrypt.hash(password, 12);
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { passwordHash: newHash, failedAttempts: 0, lockedUntil: null },
-      });
-      user.passwordHash = newHash;
-      isPasswordValid = true;
-    }
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
       const newFailedAttempts = user.failedAttempts + 1;
@@ -291,7 +293,7 @@ export class AuthService {
       throw AppError.unauthorized('Invalid or expired refresh token');
     }
 
-    // Find refresh token in DB
+    // Find refresh token in DB by ID, then verify HMAC hash matches
     const storedToken = await prisma.refreshToken.findUnique({
       where: { id: decoded.tokenId },
       include: {
@@ -308,9 +310,16 @@ export class AuthService {
       throw AppError.unauthorized('Refresh token is invalid or has been revoked');
     }
 
+    // Verify HMAC hash of the incoming refresh token matches what's stored
+    const incomingHash = hmacSha256(refreshTokenStr, env.REFRESH_TOKEN_HMAC_SECRET);
+    if (storedToken.token !== incomingHash) {
+      logSecurityEvent('REFRESH_TOKEN_HASH_MISMATCH', 'high', ipAddress, `HMAC mismatch for token ${decoded.tokenId}`);
+      throw AppError.unauthorized('Refresh token is invalid');
+    }
+
     const user = storedToken.user;
     if (!user.isActive || user.deletedAt) {
-      throw AppError.unauthorized('User account is inactive');
+      throw AppError.forbidden('User account is inactive or deleted');
     }
 
     const roles = user.userRoles.map((ur) => ur.role.name as UserRoleName);
@@ -325,7 +334,7 @@ export class AuthService {
     const newRefreshTokenRecord = await prisma.refreshToken.create({
       data: {
         userId: user.id,
-        token: 'pending',
+        token: `pending_${crypto.randomUUID()}`,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },
     });
@@ -343,10 +352,11 @@ export class AuthService {
       sessionId: storedToken.id,
     });
 
-    // Store actual token string
+    // Store HMAC hash of new refresh token
+    const newRefreshTokenHash = hmacSha256(newRefreshToken, env.REFRESH_TOKEN_HMAC_SECRET);
     await prisma.refreshToken.update({
       where: { id: newRefreshTokenRecord.id },
-      data: { token: newRefreshToken },
+      data: { token: newRefreshTokenHash },
     });
 
     await this.recordAuthAudit(user.id, user.email, 'TOKEN_REFRESHED', ipAddress, userAgent);
@@ -502,20 +512,20 @@ export class AuthService {
       },
     });
 
-    // Create DB RefreshToken record
-    const refreshTokenRecord = await prisma.refreshToken.create({
-      data: {
-        userId,
-        token: `pending_${Date.now()}_${Math.random()}`,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
-
     const accessToken = signAccessToken({
       sub: userId,
       email,
       roles,
       sessionId: session.id,
+    });
+
+    // Create DB RefreshToken record — store HMAC hash, not raw JWT
+    const refreshTokenRecord = await prisma.refreshToken.create({
+      data: {
+        userId,
+        token: `pending_${crypto.randomUUID()}`,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
     });
 
     const refreshToken = signRefreshToken({
@@ -524,15 +534,17 @@ export class AuthService {
       sessionId: session.id,
     });
 
-    // Update DB with actual token strings
+    // Store HMAC-SHA256 hash of refresh token in DB (never raw JWT)
+    const refreshTokenHash = hmacSha256(refreshToken, env.REFRESH_TOKEN_HMAC_SECRET);
+
     await prisma.session.update({
       where: { id: session.id },
-      data: { token: accessToken },
+      data: { token: session.id }, // session token = session id (not the JWT)
     });
 
     await prisma.refreshToken.update({
       where: { id: refreshTokenRecord.id },
-      data: { token: refreshToken },
+      data: { token: refreshTokenHash },
     });
 
     return {

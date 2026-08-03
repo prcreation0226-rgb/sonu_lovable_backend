@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env';
 import { globalErrorHandler } from './middleware/errorHandler';
@@ -37,8 +38,30 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// ---- Cookie Parser ----
+app.use(cookieParser());
+
 // ---- Compression ----
 app.use(compression());
+
+// ---- CSRF Origin Validation ----
+// Validate Origin header on state-changing requests to prevent CSRF attacks.
+// Only applies to requests with cookies (browser requests).
+const allowedOrigins = env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean);
+app.use((req, res, next) => {
+  // Only check state-changing methods
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const origin = req.headers.origin;
+    // If Origin header is present (browser request), validate it
+    if (origin && !allowedOrigins.includes(origin)) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'CSRF_001', message: 'Origin not allowed' },
+      });
+    }
+  }
+  next();
+});
 
 // ---- Request ID ----
 app.use(requestId);

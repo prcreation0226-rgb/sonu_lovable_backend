@@ -5,11 +5,11 @@ import rateLimit from 'express-rate-limit';
 import { env } from '../config/env';
 
 /**
- * Strict Rate Limiter for Auth & Public Booking Endpoints (10 attempts / 15m)
+ * Rate Limiter for Auth Login & Password Endpoints (100 attempts / 15m)
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // 20 attempts per 15 minutes
+  max: 100, // 100 attempts per 15 minutes window
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -18,6 +18,12 @@ export const authLimiter = rateLimit({
       code: 'RATE_001',
       message: 'Too many authentication or booking attempts. Please try again later.',
     },
+  },
+  keyGenerator: (req) => {
+    return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || req.ip
+      || req.socket.remoteAddress
+      || 'unknown';
   },
 });
 

@@ -387,29 +387,58 @@ export class StaffService {
   }
 
   /**
-   * Soft-delete Staff Profile AND linked User account.
+   * Smart Delete Staff Profile AND linked User account.
+   * If staff has 0 linked appointments or chart notes, performs HARD DELETE (permanently removes from MySQL).
+   * If staff has linked patient records, performs SOFT DELETE (deletedAt = now) to preserve foreign keys & HIPAA audit trail.
    */
   static async deleteStaffProfile(staffId: string, adminUserId: string, ipAddress: string) {
-    const existing = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
+    const existing = await prisma.staffProfile.findFirst({
+      where: { id: staffId },
+    });
     if (!existing) throw AppError.notFound('Staff Profile');
 
-    await prisma.$transaction(async (tx) => {
-      await tx.staffProfile.update({
-        where: { id: staffId },
-        data: {
-          deletedAt: new Date(),
-          isActive: false,
-        },
-      });
+    // Check if staff member is linked to any active appointments or chart notes
+    const [appointmentCount, noteCount] = await Promise.all([
+      prisma.appointment.count({ where: { staffId } }).catch(() => 0),
+      prisma.soapNote.count({ where: { OR: [{ authorId: staffId }, { cosignedBy: staffId }] } }).catch(() => 0),
+    ]);
 
-      if (existing.userId) {
-        await tx.user.update({
-          where: { id: existing.userId },
+    const hasLinkedMedicalData = appointmentCount > 0 || noteCount > 0;
+    let deleteType = 'SOFT';
+
+    await prisma.$transaction(async (tx) => {
+      if (!hasLinkedMedicalData) {
+        deleteType = 'HARD';
+        // HARD DELETE: Remove relational links first, then hard delete profile & user
+        await tx.staffLocation.deleteMany({ where: { staffId } }).catch(() => {});
+        await tx.providerService.deleteMany({ where: { staffId } }).catch(() => {});
+        await tx.staffProfile.delete({ where: { id: staffId } });
+
+        if (existing.userId) {
+          await tx.userRole.deleteMany({ where: { userId: existing.userId } }).catch(() => {});
+          await tx.refreshToken.deleteMany({ where: { userId: existing.userId } }).catch(() => {});
+          await tx.session.deleteMany({ where: { userId: existing.userId } }).catch(() => {});
+          await tx.user.delete({ where: { id: existing.userId } }).catch(() => {});
+        }
+      } else {
+        // SOFT DELETE: Preserve medical audit trail for HIPAA compliance
+        await tx.staffProfile.update({
+          where: { id: staffId },
           data: {
             deletedAt: new Date(),
             isActive: false,
           },
         });
+
+        if (existing.userId) {
+          await tx.user.update({
+            where: { id: existing.userId },
+            data: {
+              deletedAt: new Date(),
+              isActive: false,
+            },
+          });
+        }
       }
     });
 
@@ -419,7 +448,7 @@ export class StaffService {
       resourceType: 'staff_profile',
       resourceId: staffId,
       ipAddress,
-      oldValue: { fullName: existing.fullName, email: existing.email },
+      oldValue: { fullName: existing.fullName, email: existing.email, deleteType },
     });
   }
 

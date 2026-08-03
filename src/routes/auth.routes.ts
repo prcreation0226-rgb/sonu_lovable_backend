@@ -9,7 +9,6 @@ import { authLimiter } from '../middleware/rateLimiter';
 import {
   LoginSchema,
   MfaLoginSchema,
-  RefreshTokenSchema,
   ChangePasswordSchema,
   MfaVerifySchema,
 } from '../schemas/auth.schema';
@@ -33,11 +32,18 @@ router.post('/login', authLimiter, validate({ body: LoginSchema }), AuthControll
 router.post('/mfa/login-verify', authLimiter, validate({ body: MfaLoginSchema }), AuthController.verifyMfaLogin);
 
 /**
- * @route   POST /api/v1/auth/refresh-token
- * @desc    Rotate refresh token and issue new access token
- * @access  Public (requires valid refresh token)
+ * @route   POST /api/v1/auth/refresh
+ * @desc    Rotate refresh token (from HttpOnly cookie) and issue new access token
+ * @access  Public (requires valid refresh token cookie)
  */
-router.post('/refresh-token', authLimiter, validate({ body: RefreshTokenSchema }), AuthController.refreshToken);
+router.post('/refresh', AuthController.refreshToken);
+
+/**
+ * @route   POST /api/v1/auth/refresh-token
+ * @desc    DEPRECATED — Compatibility alias for /refresh. Will be removed.
+ * @access  Public (requires valid refresh token cookie)
+ */
+router.post('/refresh-token', AuthController.refreshToken);
 
 // ---- Protected Routes (Requires JWT Access Token) ----
 
