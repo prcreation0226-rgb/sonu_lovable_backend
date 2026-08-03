@@ -6,7 +6,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/auth.service';
 import { AuthenticatedRequest, ApiResponse } from '../types';
-import { setAuthCookies, clearAuthCookies, extractRefreshToken } from '../utils/cookies';
+import {
+  setAuthCookies,
+  clearAuthCookies,
+  extractRefreshToken,
+  setMfaPendingCookie,
+  clearMfaPendingCookie,
+} from '../utils/cookies';
 
 export class AuthController {
   /**
@@ -24,13 +30,20 @@ export class AuthController {
       const result = await AuthService.login(req.body, ip, userAgent);
 
       if (result.mfaRequired) {
-        // MFA challenge — return MFA token in body (short-lived, not a session token)
+        if (result.challengeToken) {
+          setMfaPendingCookie(res, result.challengeToken);
+        }
+
         const response: ApiResponse = {
           success: true,
-          data: { mfaRequired: true, mfaToken: result.mfaToken },
-          message: 'MFA verification required',
+          data: {
+            mfaRequired: true,
+            enrollmentRequired: result.enrollmentRequired,
+            challengeToken: result.challengeToken,
+          },
+          message: 'MFA challenge required',
         };
-        res.status(200).json(response);
+        res.status(202).json(response);
         return;
       }
 
@@ -140,8 +153,9 @@ export class AuthController {
         await AuthService.logout(userId, sessionId, ip, userAgent).catch(() => {});
       }
 
-      // Clear both auth cookies
+      // Clear both auth cookies & MFA pending cookie
       clearAuthCookies(res);
+      clearMfaPendingCookie(res);
 
       res.status(200).json({
         success: true,
@@ -150,6 +164,7 @@ export class AuthController {
     } catch {
       // Always clear cookies even on error
       clearAuthCookies(res);
+      clearMfaPendingCookie(res);
 
       res.status(200).json({
         success: true,

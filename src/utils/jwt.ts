@@ -11,6 +11,7 @@ export interface AccessTokenPayload {
   email: string;
   roles: UserRoleName[];
   sessionId: string;
+  aal?: 'aal1' | 'aal2';
   iat?: number;
   exp?: number;
 }
@@ -19,6 +20,7 @@ export interface RefreshTokenPayload {
   sub: string;       // User ID
   tokenId: string;   // Database RefreshToken ID
   sessionId: string;
+  aal?: 'aal1' | 'aal2';
   iat?: number;
   exp?: number;
 }

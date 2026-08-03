@@ -99,6 +99,7 @@ app.get('/health', (_req, res) => {
 
 // ---- API Routes ----
 import authRouter from './routes/auth.routes';
+import mfaRouter from './routes/mfa.routes';
 import userRouter, { roleRouter } from './routes/user.routes';
 import staffRouter from './routes/staff.routes';
 import locationRouter from './routes/location.routes';
@@ -111,8 +112,14 @@ import billingRouter from './routes/billing.routes';
 import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 import availabilityRouter from './routes/availability.routes';
+import { MfaService } from './services/mfa.service';
+
+// Initialize MFA Schema idempotently
+MfaService.ensureMfaTablesExist();
 
 const apiRouters: [string, any][] = [
+  ['/auth/mfa', mfaRouter],
+  ['/admin', mfaRouter],
   ['/auth', authRouter],
   ['/users', userRouter],
   ['/roles', roleRouter],

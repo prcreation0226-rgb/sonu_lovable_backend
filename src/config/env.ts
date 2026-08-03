@@ -82,6 +82,14 @@ export const env = {
   RATE_LIMIT_WINDOW_MS: optionalIntEnv('RATE_LIMIT_WINDOW_MS', 900000),
   RATE_LIMIT_MAX_REQUESTS: optionalIntEnv('RATE_LIMIT_MAX_REQUESTS', 100),
 
+  // MFA Feature Flags & Encryption
+  MFA_ENFORCEMENT_ENABLED: optionalEnv('MFA_ENFORCEMENT_ENABLED', 'false') === 'true',
+  MFA_REQUIRED_ROLES: optionalEnv(
+    'MFA_REQUIRED_ROLES',
+    'admin,nurse_practitioner,medical_director,rn_injector,privacy_officer'
+  ).split(',').map((r) => r.trim()).filter(Boolean),
+  MFA_ENCRYPTION_KEY: optionalEnv('MFA_ENCRYPTION_KEY', optionalEnv('ENCRYPTION_KEY', 'default-radiantilyk-mfa-secret-key-32b')),
+
   // Logging
   LOG_LEVEL: optionalEnv('LOG_LEVEL', 'debug'),
   LOG_FILE_PATH: optionalEnv('LOG_FILE_PATH', './logs'),

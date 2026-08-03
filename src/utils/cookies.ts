@@ -99,4 +99,32 @@ export function extractRefreshToken(req: { cookies?: Record<string, string> }): 
   return req.cookies?.[REFRESH_COOKIE] || null;
 }
 
-export { ACCESS_COOKIE, REFRESH_COOKIE, accessCookieOptions, refreshCookieOptions };
+const MFA_PENDING_COOKIE = 'rka_mfa_pending';
+const MFA_PENDING_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+
+export function setMfaPendingCookie(res: Response, challengeToken: string): void {
+  const isProd = env.IS_PRODUCTION;
+  res.cookie(MFA_PENDING_COOKIE, challengeToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/',
+    maxAge: MFA_PENDING_MAX_AGE_MS,
+  });
+}
+
+export function clearMfaPendingCookie(res: Response): void {
+  const isProd = env.IS_PRODUCTION;
+  res.clearCookie(MFA_PENDING_COOKIE, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/',
+  });
+}
+
+export function extractMfaPendingToken(req: { cookies?: Record<string, string>; body?: { mfaToken?: string } }): string | null {
+  return req.cookies?.[MFA_PENDING_COOKIE] || req.body?.mfaToken || null;
+}
+
+export { ACCESS_COOKIE, REFRESH_COOKIE, MFA_PENDING_COOKIE, accessCookieOptions, refreshCookieOptions };

@@ -31,9 +31,13 @@ export interface AuthTokens {
   expiresIn: string;
 }
 
+import { MfaService } from './mfa.service';
+
 export interface LoginResult {
   mfaRequired: boolean;
   mfaToken?: string;
+  enrollmentRequired?: boolean;
+  challengeToken?: string;
   user?: {
     id: string;
     email: string;
@@ -183,22 +187,28 @@ export class AuthService {
 
     const roles = user.userRoles.map((ur) => ur.role.name as UserRoleName);
 
-    // 4. Check MFA Requirement
-    if (user.mfaEnabled) {
-      // Generate temporary MFA challenge token (valid for 5 minutes)
-      const mfaToken = signAccessToken({
-        sub: user.id,
-        email: user.email,
-        roles,
-        sessionId: 'mfa_challenge',
+    // 4. Check MFA Requirement (Enforcement flag & Active factor check)
+    const isRequiredRole = roles.some((r) => (env.MFA_REQUIRED_ROLES as readonly string[]).includes(r));
+    const mustEnforceMfa = env.MFA_ENFORCEMENT_ENABLED && isRequiredRole;
+    const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active' } })) > 0;
+
+    if (mustEnforceMfa || hasActiveMfa) {
+      const challenge = await MfaService.createChallenge(user.id);
+      await this.recordAuthAudit(user.id, email, 'MFA_ENROLL_STARTED', ipAddress, userAgent, {
+        mustEnforceMfa,
+        hasActiveMfa,
+        enrollmentRequired: !hasActiveMfa,
       });
 
-      await this.recordAuthAudit(user.id, email, 'MFA_CHALLENGE_ISSUED', ipAddress, userAgent);
-      return { mfaRequired: true, mfaToken };
+      return {
+        mfaRequired: true,
+        enrollmentRequired: !hasActiveMfa,
+        challengeToken: challenge.challengeToken,
+      };
     }
 
-    // 5. Complete Login (Create Session & Tokens)
-    const tokens = await this.createSessionAndTokens(user.id, user.email, roles, ipAddress, userAgent);
+    // 5. Complete Login (Create Session & Tokens with AAL1)
+    const tokens = await this.createSessionAndTokens(user.id, user.email, roles, ipAddress, userAgent, 'aal1');
 
     // Update last login
     await prisma.user.update({
@@ -319,6 +329,7 @@ export class AuthService {
     }
 
     const roles = user.userRoles.map((ur) => ur.role.name as UserRoleName);
+    const existingAal: 'aal1' | 'aal2' = (decoded.aal === 'aal2' || storedToken.aal === 'aal2') ? 'aal2' : 'aal1';
 
     // Revoke old refresh token (Token Rotation)
     await prisma.refreshToken.update({
@@ -331,6 +342,7 @@ export class AuthService {
       data: {
         userId: user.id,
         token: `pending_${crypto.randomUUID()}`,
+        aal: existingAal,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },
     });
@@ -340,12 +352,14 @@ export class AuthService {
       email: user.email,
       roles,
       sessionId: storedToken.id,
+      aal: existingAal,
     });
 
     const newRefreshToken = signRefreshToken({
       sub: user.id,
       tokenId: newRefreshTokenRecord.id,
       sessionId: storedToken.id,
+      aal: existingAal,
     });
 
     // Store HMAC hash of new refresh token
@@ -488,20 +502,35 @@ export class AuthService {
   }
 
   /**
-   * Helper: Create Session & Initial Tokens.
+   * Helper: Get user info by ID
    */
-  private static async createSessionAndTokens(
+  static async getUserById(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { userRoles: { include: { role: true } } },
+    });
+    if (!user) throw AppError.notFound('User');
+    const roles = user.userRoles.map((ur) => ur.role.name as UserRoleName);
+    return { id: user.id, email: user.email, roles, isActive: user.isActive, deletedAt: user.deletedAt };
+  }
+
+  /**
+   * Helper: Create Session & Initial Tokens with AAL level.
+   */
+  public static async createSessionAndTokens(
     userId: string,
     email: string,
     roles: UserRoleName[],
     ipAddress: string,
-    userAgent: string
+    userAgent: string,
+    aal: 'aal1' | 'aal2' = 'aal1'
   ): Promise<AuthTokens> {
     // Create DB Session
     const session = await prisma.session.create({
       data: {
         userId,
         token: `pending_${Date.now()}_${Math.random()}`,
+        aal,
         ipAddress,
         userAgent: userAgent.substring(0, 500),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
@@ -513,6 +542,7 @@ export class AuthService {
       email,
       roles,
       sessionId: session.id,
+      aal,
     });
 
     // Create DB RefreshToken record — store HMAC hash, not raw JWT
@@ -520,6 +550,7 @@ export class AuthService {
       data: {
         userId,
         token: `pending_${crypto.randomUUID()}`,
+        aal,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
@@ -528,6 +559,7 @@ export class AuthService {
       sub: userId,
       tokenId: refreshTokenRecord.id,
       sessionId: session.id,
+      aal,
     });
 
     // Store HMAC-SHA256 hash of refresh token in DB (never raw JWT)
