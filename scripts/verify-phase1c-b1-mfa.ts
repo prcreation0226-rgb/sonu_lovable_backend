@@ -1,6 +1,6 @@
 import http from 'http';
 import https from 'https';
-import { otplib } from 'otplib';
+import { authenticator } from 'otplib';
 import { env } from '../src/config/env';
 
 // Configure HTTPS Agent for direct IP connection to Railway live backend
@@ -105,9 +105,10 @@ async function runMfaVerificationSuite() {
   console.log('2. Authenticating as phase1-admin@radiantilyk.com...');
   const adminLogin = await makeRequest('POST', '/auth/login', {
     email: 'phase1-admin@radiantilyk.com',
-    password: 'Password123!',
+    password: 'Phase1Test!2026',
   });
 
+  console.log('adminLogin status:', adminLogin.status, 'body:', adminLogin.body, 'cookies:', adminLogin.cookies);
   const adminCookies = adminLogin.cookies;
 
   // Test 1: Standard login works normally when MFA_ENFORCEMENT_ENABLED=false
@@ -133,6 +134,7 @@ async function runMfaVerificationSuite() {
 
   // Test 3: POST /auth/mfa/enroll/start (Voluntary enrollment start)
   const startRes = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, adminCookies);
+  console.log('Enroll Start response body:', JSON.stringify(startRes.body, null, 2));
   const factorId = startRes.body.data?.factorId;
   const totpSecret = startRes.body.data?.secret;
   const otpauthUrl = startRes.body.data?.otpauthUrl;
@@ -162,7 +164,7 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 5: Verify with correct 6-digit TOTP code succeeds & generates 10 recovery codes
-  const validCode = otplib.authenticator.generate(totpSecret);
+  const validCode = authenticator.generate(totpSecret);
   const verifyEnrollRes = await makeRequest('POST', '/auth/mfa/enroll/verify', {
     factorId,
     code: validCode,
@@ -208,7 +210,7 @@ async function runMfaVerificationSuite() {
   // Test 8: Login when user has active MFA factor triggers MFA challenge
   const mfaLogin = await makeRequest('POST', '/auth/login', {
     email: 'phase1-admin@radiantilyk.com',
-    password: 'Password123!',
+    password: 'Phase1Test!2026',
   });
 
   const hasMfaPendingCookie = mfaLogin.cookies.some((c) => c.includes('rka_mfa_pending'));
@@ -241,7 +243,7 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
-  const validChallengeCode = otplib.authenticator.generate(totpSecret);
+  const validChallengeCode = authenticator.generate(totpSecret);
   const mfaChallengeRes = await makeRequest(
     'POST',
     '/auth/mfa/challenge/verify',
@@ -268,7 +270,7 @@ async function runMfaVerificationSuite() {
     // Trigger new MFA challenge
     const mfaLogin2 = await makeRequest('POST', '/auth/login', {
       email: 'phase1-admin@radiantilyk.com',
-      password: 'Password123!',
+      password: 'Phase1Test!2026',
     });
 
     const recoveryRes1 = await makeRequest(
@@ -290,7 +292,7 @@ async function runMfaVerificationSuite() {
     // Test 12: Used recovery code cannot be used again
     const mfaLogin3 = await makeRequest('POST', '/auth/login', {
       email: 'phase1-admin@radiantilyk.com',
-      password: 'Password123!',
+      password: 'Phase1Test!2026',
     });
 
     const recoveryRes2 = await makeRequest(

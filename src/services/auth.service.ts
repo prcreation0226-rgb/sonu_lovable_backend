@@ -812,6 +812,8 @@ export class AuthService {
             passwordHash,
             isActive: acc.isActive,
             deletedAt: acc.deletedAt,
+            failedAttempts: 0,
+            lockedUntil: null,
           },
         });
       }
