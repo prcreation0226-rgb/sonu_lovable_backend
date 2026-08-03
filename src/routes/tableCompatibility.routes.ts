@@ -29,10 +29,11 @@ export const globalVendors: any[] = [
 router.get('/:tableName*', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
+    const rootModule = tableName.split('/')[0].split('?')[0];
 
     // Do not hijack core protected module endpoints with generic table fallback
     const protectedModules = ['clinical', 'patient', 'patients', 'appointment', 'appointments', 'staff', 'compliance', 'auth', 'billing', 'inventory'];
-    if (protectedModules.includes(tableName)) {
+    if (protectedModules.includes(rootModule)) {
       return next();
     }
 
