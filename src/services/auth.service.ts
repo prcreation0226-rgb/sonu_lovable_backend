@@ -9,6 +9,7 @@
 // - Audit Trail: Every auth event logged to auth_audit_logs
 
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { authenticator } from 'otplib';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
@@ -267,7 +268,7 @@ export class AuthService {
     const newRefreshTokenRecord = await prisma.refreshToken.create({
       data: {
         userId: user.id,
-        token: 'pending',
+        token: `pending_${crypto.randomUUID()}`,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       },
     });
@@ -456,7 +457,7 @@ export class AuthService {
     const refreshTokenRecord = await prisma.refreshToken.create({
       data: {
         userId,
-        token: 'pending', // placeholder, updated below
+        token: `pending_${crypto.randomUUID()}`,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
