@@ -45,6 +45,13 @@ router.post('/refresh', AuthController.refreshToken);
  */
 router.post('/refresh-token', AuthController.refreshToken);
 
+/**
+ * @route   POST /api/v1/auth/verify-phase1a
+ * @desc    Run Phase 1A Live MySQL Auth Audit Verification Suite
+ * @access  Public
+ */
+router.post('/verify-phase1a', AuthController.verifyPhase1a);
+
 // ---- Protected Routes (Requires JWT Access Token) ----
 
 /**

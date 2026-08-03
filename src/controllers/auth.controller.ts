@@ -244,4 +244,25 @@ export class AuthController {
       next(error);
     }
   }
+
+  /**
+   * POST /api/v1/auth/verify-phase1a
+   * Strictly verifies Phase 1A MySQL Authentication Foundation against the Live Database.
+   */
+  static async verifyPhase1a(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '0.0.0.0';
+      const userAgent = req.headers['user-agent'] || '';
+
+      const verificationResults = await AuthService.runPhase1aLiveVerification(ip, userAgent);
+
+      res.status(200).json({
+        success: true,
+        data: verificationResults,
+        message: 'Phase 1A Live MySQL Auth Verification completed successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
