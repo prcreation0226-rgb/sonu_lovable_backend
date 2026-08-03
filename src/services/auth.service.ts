@@ -792,25 +792,26 @@ export class AuthService {
       { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date() },
     ];
 
-    await prisma.mfaChallenge.deleteMany({
-      where: { user: { email: { in: accounts.map((a) => a.email) } } },
-    }).catch(() => {});
-    await prisma.mfaFactor.deleteMany({
-      where: { user: { email: { in: accounts.map((a) => a.email) } } },
-    }).catch(() => {});
-    await prisma.mfaRecoveryCode.deleteMany({
-      where: { user: { email: { in: accounts.map((a) => a.email) } } },
-    }).catch(() => {});
-
-    await prisma.user.updateMany({
+    const existingUsers = await prisma.user.findMany({
       where: { email: { in: accounts.map((a) => a.email) } },
-      data: {
-        passwordHash,
-        failedAttempts: 0,
-        lockedUntil: null,
-        mfaEnabled: false,
-      },
+      select: { id: true },
     });
+    const existingUserIds = existingUsers.map((u) => u.id);
+
+    if (existingUserIds.length > 0) {
+      await prisma.mfaChallenge.deleteMany({ where: { userId: { in: existingUserIds } } });
+      await prisma.mfaFactor.deleteMany({ where: { userId: { in: existingUserIds } } });
+      await prisma.mfaRecoveryCode.deleteMany({ where: { userId: { in: existingUserIds } } });
+      await prisma.user.updateMany({
+        where: { id: { in: existingUserIds } },
+        data: {
+          passwordHash,
+          failedAttempts: 0,
+          lockedUntil: null,
+          mfaEnabled: false,
+        },
+      });
+    }
 
     const results: any[] = [];
 
