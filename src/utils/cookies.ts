@@ -45,15 +45,11 @@ function accessCookieOptions(maxAge?: number): CookieOptions {
  */
 function refreshCookieOptions(maxAge?: number): CookieOptions {
   const isProd = env.IS_PRODUCTION;
-  // Normalize API_PREFIX (e.g., /api/v1)
-  const apiPrefix = env.API_PREFIX.replace(/\/$/, '');
-  const refreshPath = `${apiPrefix}/auth`;
-
   return {
     httpOnly: true,
     secure: isProd,
     sameSite: isProd ? ('none' as const) : ('lax' as const),
-    path: refreshPath,
+    path: '/api/auth',
     ...(maxAge !== undefined ? { maxAge } : {}),
   };
 }
