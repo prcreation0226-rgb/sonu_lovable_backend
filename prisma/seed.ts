@@ -222,15 +222,12 @@ async function seed() {
       },
     });
 
-    // Assign Role
+    // Assign Role (Clear existing roles first to prevent stale role accumulation)
     const roleObj = await prisma.role.findUnique({ where: { name: userInfo.role } });
     if (roleObj) {
-      await prisma.userRole.upsert({
-        where: {
-          userId_roleId: { userId: user.id, roleId: roleObj.id },
-        },
-        update: {},
-        create: { userId: user.id, roleId: roleObj.id },
+      await prisma.userRole.deleteMany({ where: { userId: user.id } });
+      await prisma.userRole.create({
+        data: { userId: user.id, roleId: roleObj.id },
       });
     }
 
