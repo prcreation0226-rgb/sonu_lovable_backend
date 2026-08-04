@@ -777,19 +777,27 @@ export class AuthService {
    * Seed dedicated Phase 1C test accounts directly in live MySQL database.
    */
   static async seedTestAccounts(): Promise<any> {
+    const demoPasswordHash = await bcrypt.hash('12345678', 10);
     const passwordHash = await bcrypt.hash('Phase1Test!2026', 10);
 
     const accounts = [
-      { email: 'phase1-admin@radiantilyk.com', roles: ['admin'], isActive: true, deletedAt: null },
-      { email: 'phase1-fd@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: null },
-      { email: 'phase1-np@radiantilyk.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null },
-      { email: 'phase1-rn@radiantilyk.com', roles: ['rn_injector'], isActive: true, deletedAt: null },
-      { email: 'phase1-md@radiantilyk.com', roles: ['medical_director'], isActive: true, deletedAt: null },
-      { email: 'phase1-po@radiantilyk.com', roles: ['privacy_officer'], isActive: true, deletedAt: null },
-      { email: 'phase1-patient@radiantilyk.com', roles: ['patient'], isActive: true, deletedAt: null },
-      { email: 'phase1-multi@radiantilyk.com', roles: ['admin', 'medical_director'], isActive: true, deletedAt: null },
-      { email: 'phase1-inactive@radiantilyk.com', roles: ['front_desk'], isActive: false, deletedAt: null },
-      { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date() },
+      { email: 'admin@gmail.com', roles: ['admin'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'medicaldirector@gmail.com', roles: ['medical_director'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'securityofficer@gmail.com', roles: ['privacy_officer'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'nurseprectitioner@gmail.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'injector@gmail.com', roles: ['rn_injector'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'scheduler@gmail.com', roles: ['front_desk'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'user@gmail.com', roles: ['patient'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'phase1-admin@radiantilyk.com', roles: ['admin'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-fd@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-np@radiantilyk.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-rn@radiantilyk.com', roles: ['rn_injector'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-md@radiantilyk.com', roles: ['medical_director'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-po@radiantilyk.com', roles: ['privacy_officer'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-patient@radiantilyk.com', roles: ['patient'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-multi@radiantilyk.com', roles: ['admin', 'medical_director'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-inactive@radiantilyk.com', roles: ['front_desk'], isActive: false, deletedAt: null, password: passwordHash },
+      { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date(), password: passwordHash },
     ];
 
     const existingUsers = await prisma.user.findMany({
@@ -821,7 +829,7 @@ export class AuthService {
         user = await prisma.user.create({
           data: {
             email: acc.email,
-            passwordHash,
+            passwordHash: acc.password,
             isActive: acc.isActive,
             deletedAt: acc.deletedAt,
           },
@@ -830,7 +838,7 @@ export class AuthService {
         user = await prisma.user.update({
           where: { id: user.id },
           data: {
-            passwordHash,
+            passwordHash: acc.password,
             isActive: acc.isActive,
             deletedAt: acc.deletedAt,
             failedAttempts: 0,
