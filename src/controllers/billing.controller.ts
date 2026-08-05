@@ -26,17 +26,26 @@ export class BillingController {
     } catch (error) { next(error); }
   }
 
-  static async getInvoiceById(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async getInvoiceById(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const invoice = await BillingService.getInvoiceById(req.params.id as string);
+      const invoice = await BillingService.getInvoiceById(req.params.id as string, req.user);
       res.status(200).json({ success: true, data: invoice });
     } catch (error) { next(error); }
   }
 
-  static async getPatientInvoices(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async getPatientInvoices(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const invoices = await BillingService.getPatientInvoices(req.params.patientId as string);
+      const invoices = await BillingService.getPatientInvoices(req.params.patientId as string, req.user);
       res.status(200).json({ success: true, data: invoices });
+    } catch (error) { next(error); }
+  }
+
+  static async cancelInvoice(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const invoice = await BillingService.cancelInvoice(req.params.id as string, userId, ip);
+      res.status(200).json({ success: true, data: invoice, message: 'Invoice cancelled successfully' });
     } catch (error) { next(error); }
   }
 

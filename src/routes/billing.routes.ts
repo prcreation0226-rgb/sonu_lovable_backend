@@ -39,16 +39,23 @@ router.get(
 
 router.get(
   '/invoices/:id',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...STAFF_ROLES, 'patient'),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getInvoiceById
 );
 
 router.get(
   '/invoices/patient/:patientId',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...STAFF_ROLES, 'patient'),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getPatientInvoices
+);
+
+router.post(
+  '/invoices/:id/cancel',
+  requireRoles('admin', 'front_desk'),
+  auditPhiAccess('patient_profile', 'update'),
+  BillingController.cancelInvoice
 );
 
 // ---- Payments ----

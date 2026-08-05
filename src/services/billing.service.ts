@@ -10,6 +10,7 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { writeAuditLog } from '../middleware/audit';
+import { AuthenticatedUser } from '../types';
 import {
   CreateInvoiceInput,
   RecordPaymentInput,
@@ -97,7 +98,7 @@ export class BillingService {
     };
   }
 
-  static async getInvoiceById(invoiceId: string) {
+  static async getInvoiceById(invoiceId: string, user?: AuthenticatedUser) {
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, deletedAt: null },
       include: {
@@ -117,10 +118,27 @@ export class BillingService {
       },
     });
     if (!invoice) throw AppError.notFound('Invoice');
+
+    // Patient Self-Scoping Check: Patients can only view their own invoice
+    if (user && user.roles.includes('patient')) {
+      const patientProfile = await prisma.patientProfile.findFirst({ where: { userId: user.id } });
+      if (!patientProfile || invoice.patientId !== patientProfile.id) {
+        throw AppError.forbidden('Cannot view another patient\'s invoice');
+      }
+    }
+
     return invoice;
   }
 
-  static async getPatientInvoices(patientId: string) {
+  static async getPatientInvoices(patientId: string, user?: AuthenticatedUser) {
+    // Patient Self-Scoping Check: Patients can only view their own invoice history
+    if (user && user.roles.includes('patient')) {
+      const patientProfile = await prisma.patientProfile.findFirst({ where: { userId: user.id } });
+      if (!patientProfile || patientId !== patientProfile.id) {
+        throw AppError.forbidden('Cannot view another patient\'s invoices');
+      }
+    }
+
     return prisma.invoice.findMany({
       where: { patientId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -129,6 +147,32 @@ export class BillingService {
         _count: { select: { payments: true } },
       },
     });
+  }
+
+  static async cancelInvoice(invoiceId: string, userId: string, ipAddress: string) {
+    const invoice = await prisma.invoice.findFirst({ where: { id: invoiceId, deletedAt: null } });
+    if (!invoice) throw AppError.notFound('Invoice');
+
+    if (invoice.status === 'paid') {
+      throw AppError.badRequest('Cannot cancel a fully paid invoice. Process a refund instead.');
+    }
+
+    const updated = await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { status: 'cancelled' },
+    });
+
+    await writeAuditLog({
+      userId,
+      patientId: invoice.patientId,
+      action: 'INVOICE_CANCELLED',
+      resourceType: 'invoice',
+      resourceId: invoice.id,
+      ipAddress,
+      newValue: { previousStatus: invoice.status, status: 'cancelled' },
+    });
+
+    return updated;
   }
 
   // ==========================================
