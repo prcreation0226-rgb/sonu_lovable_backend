@@ -228,8 +228,8 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   // Test 5: Admin Appointment Creation -> ALLOWED
   // ----------------------------------------------------------------
-  const adminStartAt = new Date(Date.now() + 86400000 * 10).toISOString();
-  const adminEndAt = new Date(Date.now() + 86400000 * 10 + 3600000).toISOString();
+  const adminStartAt = new Date(Date.now() + 86400000 * 15).toISOString();
+  const adminEndAt = new Date(Date.now() + 86400000 * 15 + 3600000).toISOString();
   const adminApptRes = await makeRequest(
     'POST',
     '/appointments',
@@ -337,42 +337,40 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 11: Patient Soft-Delete Authorization (Front Desk / NP / RN / MD -> 403, Admin -> 200)
+  // Test 11: Appointment Cancellation (Front Desk) -> ALLOWED
   // ----------------------------------------------------------------
-  // Front Desk delete attempt
-  const fdDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, fdCookies);
-  const passT11a = fdDeleteRes.status === 403;
-
-  // NP delete attempt
-  const npDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, npCookies);
-  const passT11b = npDeleteRes.status === 403;
-
-  // RN delete attempt
-  const rnDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, rnCookies);
-  const passT11c = rnDeleteRes.status === 403;
-
-  // MD delete attempt
-  const mdDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, mdCookies);
-  const passT11d = mdDeleteRes.status === 403;
-
-  const passT11AllDenied = passT11a && passT11b && passT11c && passT11d;
+  const cancelRes = await makeRequest(
+    'POST',
+    `/appointments/${fdApptId}/cancel`,
+    { cancellationReason: 'Front Desk test cancellation' },
+    fdCookies
+  );
+  const passT11 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
   results.push({
-    step: '11. Non-Admin Patient Soft-Delete Blocked',
-    expected: 'HTTP 403 Forbidden (FD, NP, RN, MD)',
-    actual: `FD:${fdDeleteRes.status}, NP:${npDeleteRes.status}, RN:${rnDeleteRes.status}, MD:${mdDeleteRes.status}`,
-    result: passT11AllDenied ? 'PASS' : 'FAIL',
-    details: `Non-admin roles blocked from patient soft-delete: ${passT11AllDenied}`,
+    step: '11. Appt Cancellation (Front Desk)',
+    expected: 'HTTP 200 OK with CANCELLED status',
+    actual: `HTTP ${cancelRes.status}`,
+    result: passT11 ? 'PASS' : 'FAIL',
+    details: `Status: ${cancelRes.body.data?.status}`,
   });
 
-  // Admin delete attempt -> ALLOWED
-  const adminDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, adminCookies);
-  const passT11Admin = adminDeleteRes.status === 200;
+  // ----------------------------------------------------------------
+  // Test 12: Appointment Reschedule (Admin) -> ALLOWED
+  // ----------------------------------------------------------------
+  const rescheduleStartAt = new Date(Date.now() + 86400000 * 15 + 7200000).toISOString();
+  const rescheduleRes = await makeRequest(
+    'POST',
+    `/appointments/${adminApptId}/reschedule`,
+    { startAt: rescheduleStartAt, reason: 'Admin rescheduled' },
+    adminCookies
+  );
+  const passT12 = rescheduleRes.status === 200;
   results.push({
-    step: '12. Admin Patient Soft-Delete Allowed',
-    expected: 'HTTP 200 OK (Soft-delete)',
-    actual: `HTTP ${adminDeleteRes.status}`,
-    result: passT11Admin ? 'PASS' : 'FAIL',
-    details: `Admin patient soft-delete message: ${adminDeleteRes.body.message}`,
+    step: '12. Appt Reschedule (Admin)',
+    expected: 'HTTP 200 OK',
+    actual: `HTTP ${rescheduleRes.status}`,
+    result: passT12 ? 'PASS' : 'FAIL',
+    details: `Status: ${rescheduleRes.body.data?.status}`,
   });
 
   // ----------------------------------------------------------------
@@ -394,7 +392,7 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 14: Health Check Behavior (/health and /api/v1/health)
+  // Test 14: Health Probe Checks (/health and /api/v1/health)
   // ----------------------------------------------------------------
   const rootHealth = await makeRequest('GET', '/health', undefined, undefined, `${ROOT_BASE}/health`);
   const passHealth1 = rootHealth.status === 200 && rootHealth.body.data?.status === 'healthy';
@@ -412,40 +410,52 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 15: Appointment Cancellation (Front Desk) -> ALLOWED
+  // Test 15: Patient Soft-Delete Authorization (Front Desk / NP / RN / MD -> 403, Admin -> 200)
   // ----------------------------------------------------------------
-  const cancelRes = await makeRequest(
+  // Create a separate patient for delete tests
+  const deleteTestPatientRes = await makeRequest(
     'POST',
-    `/appointments/${fdApptId}/cancel`,
-    { cancellationReason: 'Front Desk test cancellation' },
-    fdCookies
-  );
-  const passT15 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
-  results.push({
-    step: '15. Appt Cancellation (Front Desk)',
-    expected: 'HTTP 200 OK with CANCELLED status',
-    actual: `HTTP ${cancelRes.status}`,
-    result: passT15 ? 'PASS' : 'FAIL',
-    details: `Status: ${cancelRes.body.data?.status}`,
-  });
-
-  // ----------------------------------------------------------------
-  // Test 16: Appointment Reschedule (Admin) -> ALLOWED
-  // ----------------------------------------------------------------
-  const rescheduleStartAt = new Date(Date.now() + 86400000 * 10 + 7200000).toISOString();
-  const rescheduleRes = await makeRequest(
-    'POST',
-    `/appointments/${adminApptId}/reschedule`,
-    { startAt: rescheduleStartAt, reason: 'Admin rescheduled' },
+    '/patients',
+    { firstName: 'DeleteTest', lastName: 'Patient', email: `delete-test-${Date.now()}@example.com`, phone: '(408) 555-0011' },
     adminCookies
   );
-  const passT16 = rescheduleRes.status === 200;
+  const deletePatientId = deleteTestPatientRes.body.data?.id;
+  if (deletePatientId) createdPatientIds.push(deletePatientId);
+
+  // Front Desk delete attempt
+  const fdDeleteRes = await makeRequest('DELETE', `/patients/${deletePatientId}`, undefined, fdCookies);
+  const passT15a = fdDeleteRes.status === 403;
+
+  // NP delete attempt
+  const npDeleteRes = await makeRequest('DELETE', `/patients/${deletePatientId}`, undefined, npCookies);
+  const passT15b = npDeleteRes.status === 403;
+
+  // RN delete attempt
+  const rnDeleteRes = await makeRequest('DELETE', `/patients/${deletePatientId}`, undefined, rnCookies);
+  const passT15c = rnDeleteRes.status === 403;
+
+  // MD delete attempt
+  const mdDeleteRes = await makeRequest('DELETE', `/patients/${deletePatientId}`, undefined, mdCookies);
+  const passT15d = mdDeleteRes.status === 403;
+
+  const passT15AllDenied = passT15a && passT15b && passT15c && passT15d;
   results.push({
-    step: '16. Appt Reschedule (Admin)',
-    expected: 'HTTP 200 OK',
-    actual: `HTTP ${rescheduleRes.status}`,
-    result: passT16 ? 'PASS' : 'FAIL',
-    details: `Status: ${rescheduleRes.body.data?.status}`,
+    step: '15. Non-Admin Patient Soft-Delete Blocked',
+    expected: 'HTTP 403 Forbidden (FD, NP, RN, MD)',
+    actual: `FD:${fdDeleteRes.status}, NP:${npDeleteRes.status}, RN:${rnDeleteRes.status}, MD:${mdDeleteRes.status}`,
+    result: passT15AllDenied ? 'PASS' : 'FAIL',
+    details: `Non-admin roles blocked from patient soft-delete: ${passT15AllDenied}`,
+  });
+
+  // Admin delete attempt -> ALLOWED
+  const adminDeleteRes = await makeRequest('DELETE', `/patients/${deletePatientId}`, undefined, adminCookies);
+  const passT15Admin = adminDeleteRes.status === 200;
+  results.push({
+    step: '16. Admin Patient Soft-Delete Allowed',
+    expected: 'HTTP 200 OK (Soft-delete)',
+    actual: `HTTP ${adminDeleteRes.status}`,
+    result: passT15Admin ? 'PASS' : 'FAIL',
+    details: `Admin patient soft-delete message: ${adminDeleteRes.body.message}`,
   });
 
   // ----------------------------------------------------------------
