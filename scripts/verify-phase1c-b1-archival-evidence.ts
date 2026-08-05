@@ -33,12 +33,6 @@ interface TestResult {
 
 const results: TestResult[] = [];
 
-async function waitForNextTotpStep(): Promise<void> {
-  const currentSecond = Math.floor(Date.now() / 1000) % 30;
-  const waitMs = (30 - currentSecond + 1) * 1000;
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
-}
-
 async function makeRequest(
   method: string,
   path: string,
@@ -111,28 +105,6 @@ async function runEvidenceAudit() {
   // Seed test accounts cleanly
   console.log('Seeding test accounts on live Railway database...');
   await makeRequest('POST', '/auth/seed-test-accounts');
-
-  // Helper to safely enroll a user
-  async function setupEnrolledUser(email: string, pass: string) {
-    const login = await makeRequest('POST', '/auth/login', { email, password: pass });
-    let start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
-    if (start.status !== 200) {
-      await makeRequest('POST', '/auth/mfa/cancel', undefined, login.cookies);
-      start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
-    }
-    const factorId = start.body.data?.factorId;
-    const secret = start.body.data?.secret;
-    const code = authenticator.generate(secret);
-
-    const verify = await makeRequest('POST', '/auth/mfa/enroll/verify', { factorId, code }, login.cookies);
-    return {
-      loginCookies: login.cookies,
-      aal2Cookies: verify.cookies,
-      secret,
-      factorId,
-      recoveryCodes: verify.body.data?.recoveryCodes || [],
-    };
-  }
 
   // ----------------------------------------------------------------
   // Evidence 1: First-Time Required-Role Pending Enrollment
@@ -221,15 +193,15 @@ async function runEvidenceAudit() {
   // ----------------------------------------------------------------
   console.log('Executing Evidence 3: requireMfa allowing AAL2 session...');
   
-  // Enroll & verify RN user to get a fresh AAL2 session
-  const rnSetup = await setupEnrolledUser('phase1-rn@radiantilyk.com', 'Phase1Test!2026');
+  // Use AAL2 cookies from Evidence 1 (verifyEnroll.cookies)
+  const aal2Cookies = verifyEnroll.cookies;
 
-  // Access MFA-protected route with AAL2 session
+  // Access MFA-protected route with valid AAL2 session
   const aal2AllowRes = await makeRequest(
     'POST',
     '/auth/mfa/recovery/regenerate',
     undefined,
-    rnSetup.aal2Cookies
+    aal2Cookies
   );
 
   const passE3 = aal2AllowRes.status === 200 && aal2AllowRes.body.success === true;
@@ -253,7 +225,7 @@ async function runEvidenceAudit() {
     'POST',
     '/auth/mfa/recovery/regenerate',
     undefined,
-    rnSetup.aal2Cookies,
+    aal2Cookies,
     { 'X-Test-Mfa-Age-Minutes': '15' }
   );
 
