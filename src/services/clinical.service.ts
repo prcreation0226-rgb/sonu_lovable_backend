@@ -391,6 +391,11 @@ export class ClinicalService {
       where: { id: noteId },
       data: {
         status: 'draft',
+        additionalData: {
+          ...(typeof note.additionalData === 'object' && note.additionalData !== null ? note.additionalData : {}),
+          lastReturnedReason: reason,
+          lastReturnedAt: new Date().toISOString(),
+        },
       },
       include: {
         author: { select: { id: true, fullName: true, title: true } },

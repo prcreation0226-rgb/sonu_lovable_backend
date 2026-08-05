@@ -497,6 +497,85 @@ async function runPhase2bVerification() {
     details: `Fetched status from database: ${fetchedNote?.status}`,
   });
 
+  // ----------------------------------------------------------------
+  // Test 15: Admin Route Access (Patients, Appointments, Staff, Services, Billing, Inventory)
+  // ----------------------------------------------------------------
+  const adminPatients = await makeRequest('GET', '/patients', undefined, adminCookies);
+  const adminAppts = await makeRequest('GET', '/appointments', undefined, adminCookies);
+  const adminStaff = await makeRequest('GET', '/staff', undefined, adminCookies);
+  const adminServices = await makeRequest('GET', '/services', undefined, adminCookies);
+  const adminBilling = await makeRequest('GET', '/billing/invoices', undefined, adminCookies);
+  const adminInventory = await makeRequest('GET', '/inventory/products', undefined, adminCookies);
+
+  const passT15 =
+    adminPatients.status === 200 &&
+    adminAppts.status === 200 &&
+    adminStaff.status === 200 &&
+    adminServices.status === 200 &&
+    adminBilling.status === 200 &&
+    adminInventory.status === 200;
+
+  results.push({
+    step: '15. Admin Approved Route Access Regression Verification',
+    expected: 'HTTP 200 for Patients, Appointments, Staff, Services, Billing, Inventory',
+    actual: `Pat:${adminPatients.status}, App:${adminAppts.status}, Staff:${adminStaff.status}, Svc:${adminServices.status}, Bill:${adminBilling.status}, Inv:${adminInventory.status}`,
+    result: passT15 ? 'PASS' : 'FAIL',
+    details: 'All core Admin management routes functional after global RBAC check',
+  });
+
+  // ----------------------------------------------------------------
+  // Test 16: Returned-For-Correction Reason Stored & Audited
+  // ----------------------------------------------------------------
+  const passT16 = rejectRes.body.data?.additionalData?.lastReturnedReason === 'Please specify neutralization time';
+  results.push({
+    step: '16. Returned-For-Correction Reason Stored in additionalData',
+    expected: 'Reason saved in note additionalData: "Please specify neutralization time"',
+    actual: `Reason: ${rejectRes.body.data?.additionalData?.lastReturnedReason}`,
+    result: passT16 ? 'PASS' : 'FAIL',
+    details: `Stored reason: ${rejectRes.body.data?.additionalData?.lastReturnedReason}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 17: Only Original Author Can Edit Returned Note
+  // ----------------------------------------------------------------
+  const npEditReturned = await makeRequest('PATCH', `/clinical/soap-notes/${note3Id}`, { plan: 'NP edit attempt' }, npCookies);
+  const rnEditReturned = await makeRequest('PATCH', `/clinical/soap-notes/${note3Id}`, { plan: 'Apply 30% glycolic acid peel for 3 minutes. Neutralize with sodium bicarbonate at 3m00s.' }, rnCookies);
+  const passT17 = npEditReturned.status === 403 && rnEditReturned.status === 200;
+  results.push({
+    step: '17. Only Original RN Author Can Edit Returned Note',
+    expected: 'NP edit returns 403 Forbidden; Original RN edit returns 200 OK',
+    actual: `NP:${npEditReturned.status}, RN:${rnEditReturned.status}`,
+    result: passT17 ? 'PASS' : 'FAIL',
+    details: 'Author-only edit boundary enforced on returned draft notes',
+  });
+
+  // ----------------------------------------------------------------
+  // Test 18: Addendum Endpoint Works Only for Locked Notes & Appends
+  // ----------------------------------------------------------------
+  const addendumRes = await makeRequest('POST', `/clinical/soap-notes/${draftNoteId}/addendum`, { reason: 'Patient follow-up', addendumText: 'No post-procedure erythema noted at 24h.' }, rnCookies);
+  const passT18 = addendumRes.status === 200;
+  results.push({
+    step: '18. Addendum Endpoint Works for Locked Notes',
+    expected: 'HTTP 200 OK creating append-only addendum record',
+    actual: `HTTP ${addendumRes.status}`,
+    result: passT18 ? 'PASS' : 'FAIL',
+    details: `Addendum ID: ${addendumRes.body.data?.id}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 19: Railway Production Health Route Check
+  // ----------------------------------------------------------------
+  const rootHealth = await makeRequest('GET', '/health', undefined, undefined, `${BASE_URL}/health`);
+  const apiHealth = await makeRequest('GET', '/health', undefined, undefined, `${BASE_URL}/api/v1/health`);
+  const passT19 = rootHealth.status === 200 && rootHealth.body?.environment === 'production' && apiHealth.status === 200 && apiHealth.body?.environment === 'production';
+  results.push({
+    step: '19. Railway Production Health Probes Verification',
+    expected: 'HTTP 200 OK with environment: production',
+    actual: `Root:${rootHealth.status} (${rootHealth.body?.environment}), API:${apiHealth.status} (${apiHealth.body?.environment})`,
+    result: passT19 ? 'PASS' : 'FAIL',
+    details: 'Health probes active and reporting production environment',
+  });
+
   // Clean up test patient and encounter
   console.log('\nCleaning up Phase 2B test fixtures...');
   await makeRequest('DELETE', `/patients/${patientId}`, undefined, adminCookies);
