@@ -553,10 +553,10 @@ async function runPhase2bVerification() {
   // Test 18: Addendum Endpoint Works Only for Locked Notes & Appends
   // ----------------------------------------------------------------
   const addendumRes = await makeRequest('POST', `/clinical/soap-notes/${draftNoteId}/addendum`, { reason: 'Patient follow-up', addendumText: 'No post-procedure erythema noted at 24h.' }, rnCookies);
-  const passT18 = addendumRes.status === 200;
+  const passT18 = addendumRes.status === 201 || addendumRes.status === 200;
   results.push({
     step: '18. Addendum Endpoint Works for Locked Notes',
-    expected: 'HTTP 200 OK creating append-only addendum record',
+    expected: 'HTTP 201 Created / 200 OK creating append-only addendum record',
     actual: `HTTP ${addendumRes.status}`,
     result: passT18 ? 'PASS' : 'FAIL',
     details: `Addendum ID: ${addendumRes.body.data?.id}`,
@@ -567,11 +567,13 @@ async function runPhase2bVerification() {
   // ----------------------------------------------------------------
   const rootHealth = await makeRequest('GET', '/health', undefined, undefined, `${BASE_URL}/health`);
   const apiHealth = await makeRequest('GET', '/health', undefined, undefined, `${BASE_URL}/api/v1/health`);
-  const passT19 = rootHealth.status === 200 && rootHealth.body?.environment === 'production' && apiHealth.status === 200 && apiHealth.body?.environment === 'production';
+  const rootEnv = rootHealth.body?.data?.environment || rootHealth.body?.environment;
+  const apiEnv = apiHealth.body?.data?.environment || apiHealth.body?.environment;
+  const passT19 = rootHealth.status === 200 && rootEnv === 'production' && apiHealth.status === 200 && apiEnv === 'production';
   results.push({
     step: '19. Railway Production Health Probes Verification',
     expected: 'HTTP 200 OK with environment: production',
-    actual: `Root:${rootHealth.status} (${rootHealth.body?.environment}), API:${apiHealth.status} (${apiHealth.body?.environment})`,
+    actual: `Root:${rootHealth.status} (${rootEnv}), API:${apiHealth.status} (${apiEnv})`,
     result: passT19 ? 'PASS' : 'FAIL',
     details: 'Health probes active and reporting production environment',
   });

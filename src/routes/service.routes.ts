@@ -19,6 +19,51 @@ const ServiceSchema = z.object({
 
 const router = Router();
 
+import { importServiceCatalog } from '../services/catalog.service';
+
+// Public route: Active services for online booking
+router.get('/public', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const categories = await prisma.serviceCategory.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+      include: {
+        services: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+    res.status(200).json({ success: true, data: categories });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Categories list for internal staff
+router.get(
+  '/categories',
+  authenticate,
+  requireRoles(...STAFF_ROLES),
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const categories = await prisma.serviceCategory.findMany({
+        where: { isActive: true },
+        orderBy: { displayOrder: 'asc' },
+        include: {
+          services: {
+            where: { deletedAt: null, isActive: true },
+            orderBy: { name: 'asc' },
+          },
+        },
+      });
+      res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // Internal staff routes for service lookup
 router.get(
   '/',
@@ -28,7 +73,8 @@ router.get(
     try {
       const services = await prisma.service.findMany({
         where: { deletedAt: null, isActive: true },
-        orderBy: { name: 'asc' },
+        include: { category: true },
+        orderBy: [{ categoryId: 'asc' }, { name: 'asc' }],
       });
       res.status(200).json({ success: true, data: services });
     } catch (error) {
@@ -45,6 +91,7 @@ router.get(
     try {
       const service = await prisma.service.findFirst({
         where: { id: req.params.id as string, deletedAt: null },
+        include: { category: true },
       });
       if (!service) {
         res.status(404).json({ success: false, message: 'Service not found' });
@@ -86,6 +133,36 @@ router.post(
   }
 );
 
+// Admin-only update route (price, notes, active status)
+router.patch(
+  '/:id',
+  authenticate,
+  requireRoles('admin'),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const serviceId = req.params.id as string;
+      const { price_cents, priceCents, priceNote, description, durationMinutes, isActive } = req.body;
+
+      const finalPriceCents = priceCents !== undefined ? priceCents : price_cents;
+
+      const service = await prisma.service.update({
+        where: { id: serviceId },
+        data: {
+          ...(finalPriceCents !== undefined ? { priceCents: finalPriceCents } : {}),
+          ...(priceNote !== undefined ? { priceNote } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+          ...(isActive !== undefined ? { isActive } : {}),
+        },
+      });
+
+      res.status(200).json({ success: true, data: service, message: 'Service updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // Admin-only soft-delete route
 router.delete(
   '/:id',
@@ -99,6 +176,21 @@ router.delete(
         data: { deletedAt: new Date(), isActive: false },
       });
       res.status(200).json({ success: true, message: 'Service soft-deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Admin-only trigger to import service catalog
+router.post(
+  '/import-catalog',
+  authenticate,
+  requireRoles('admin'),
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      await importServiceCatalog();
+      res.status(200).json({ success: true, message: 'Client service catalog imported successfully' });
     } catch (error) {
       next(error);
     }
