@@ -101,6 +101,8 @@ async function runPhase2aVerification() {
   // Track created IDs for cleanup
   const createdPatientIds: string[] = [];
   const createdApptIds: string[] = [];
+  const createdServiceIds: string[] = [];
+  const createdLocationIds: string[] = [];
 
   // Seed test staff accounts
   await makeRequest('POST', '/auth/seed-test-accounts');
@@ -133,6 +135,7 @@ async function runPhase2aVerification() {
   if (!locationId) {
     const createLocRes = await makeRequest('POST', '/locations', { name: 'RKA San Jose Main', city: 'San Jose', state: 'CA', timezone: 'America/Los_Angeles' }, adminCookies);
     locationId = createLocRes.body.data?.id;
+    if (locationId) createdLocationIds.push(locationId);
   }
 
   const srvListRes = await makeRequest('GET', '/services', undefined, adminCookies);
@@ -140,6 +143,7 @@ async function runPhase2aVerification() {
   if (!serviceId) {
     const createSrvRes = await makeRequest('POST', '/services', { name: 'Phase2A Test Consultation', durationMinutes: 30, priceCents: 15000 }, adminCookies);
     serviceId = createSrvRes.body.data?.id;
+    if (serviceId) createdServiceIds.push(serviceId);
   }
   console.log(`Reference fixtures active: locationId=${locationId}, serviceId=${serviceId}\n`);
 
@@ -381,6 +385,7 @@ async function runPhase2aVerification() {
 
   const adminSrvRes = await makeRequest('POST', '/services', { name: `Admin Test Service ${Date.now()}` }, adminCookies);
   const passT13Admin = adminSrvRes.status === 201;
+  if (adminSrvRes.body.data?.id) createdServiceIds.push(adminSrvRes.body.data.id);
 
   const passT13All = passT13NonAdmin && passT13Admin;
   results.push({
@@ -461,20 +466,26 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   // Test 17: Live Test Fixture Cleanup
   // ----------------------------------------------------------------
-  console.log('\nCleaning up Phase 2A test fixtures (soft-deleting test patients & cancelling test appointments)...');
+  console.log('\nCleaning up Phase 2A test fixtures (soft-deleting test patients/services/locations & cancelling test appointments)...');
   for (const aId of createdApptIds) {
     await makeRequest('POST', `/appointments/${aId}/cancel`, { cancellationReason: 'Phase 2A test fixture cleanup' }, adminCookies);
   }
   for (const pId of createdPatientIds) {
     await makeRequest('DELETE', `/patients/${pId}`, undefined, adminCookies);
   }
+  for (const sId of createdServiceIds) {
+    await makeRequest('DELETE', `/services/${sId}`, undefined, adminCookies);
+  }
+  for (const lId of createdLocationIds) {
+    await makeRequest('DELETE', `/locations/${lId}`, undefined, adminCookies);
+  }
 
   results.push({
     step: '17. Test Fixture Cleanup',
-    expected: 'Test appointments cancelled and test patients soft-deleted',
-    actual: `Cleaned ${createdApptIds.length} appts, ${createdPatientIds.length} patients`,
+    expected: 'Test appointments cancelled; test patients, services, and locations soft-deleted',
+    actual: `Cleaned ${createdApptIds.length} appts, ${createdPatientIds.length} patients, ${createdServiceIds.length} services, ${createdLocationIds.length} locations`,
     result: 'PASS',
-    details: `Audit logs preserved; test records soft-deleted/cancelled`,
+    details: `Audit logs preserved; all temporary test records safely soft-deleted/cancelled`,
   });
 
   // Print Summary Table

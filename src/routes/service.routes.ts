@@ -86,4 +86,23 @@ router.post(
   }
 );
 
+// Admin-only soft-delete route
+router.delete(
+  '/:id',
+  authenticate,
+  requireRoles('admin'),
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const serviceId = req.params.id as string;
+      await prisma.service.update({
+        where: { id: serviceId },
+        data: { deletedAt: new Date(), isActive: false },
+      });
+      res.status(200).json({ success: true, message: 'Service soft-deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;
