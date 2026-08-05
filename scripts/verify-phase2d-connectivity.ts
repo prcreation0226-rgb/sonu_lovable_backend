@@ -94,13 +94,39 @@ async function runFullPhase2dVerification() {
   const npCookies = await loginAs('phase1-np@radiantilyk.com');
   const mdCookies = await loginAs('phase1-md@radiantilyk.com');
   const poCookies = await loginAs('phase1-po@radiantilyk.com');
-  const patientCookies = await loginAs('patient-raja@example.com', 'PatientPassword!2026');
+  const patientCookies = await loginAs('phase1-patient@radiantilyk.com');
 
   // Resolve default active location ID for lot creation
   const apptsRes = await makeRequest('GET', '/appointments', undefined, adminCookies);
   const activeAppt = apptsRes.body?.data?.[0];
   const locationId = activeAppt?.locationId || activeAppt?.location_id || 'loc-default';
-  const encounterId = activeAppt?.id || 'enc-fixture-2d';
+
+  // Create test patient & clinical encounter for valid TreatmentUsage testing
+  const patientRes = await makeRequest('POST', '/patients', {
+    firstName: 'InventoryTest',
+    lastName: 'Patient2D',
+    email: `inventory-patient-${Date.now()}@example.com`,
+    phone: '(408) 555-9999',
+    dateOfBirth: '1992-06-20',
+  }, adminCookies);
+  const patientId = patientRes.body?.data?.id;
+
+  const staffRes = await makeRequest('GET', '/staff', undefined, adminCookies);
+  const rnStaff = staffRes.body?.data?.find((s: any) => s.email === 'phase1-rn@radiantilyk.com' || s.user?.email === 'phase1-rn@radiantilyk.com');
+  const providerId = rnStaff?.id || staffRes.body?.data?.[0]?.id;
+
+  const encRes = await makeRequest('POST', '/clinical/encounters', {
+    patientId,
+    providerId,
+    locationId,
+    encounterType: 'botox_filler',
+    chiefComplaint: 'Phase 2D Inventory Lot Usage Consultation',
+  }, rnCookies);
+  const encounterId = encRes.body?.data?.id;
+
+  if (!encounterId) {
+    throw new Error(`Encounter creation failed: ${JSON.stringify(encRes.body)}`);
+  }
 
   // Admin creates product & active lot for testing
   const testSku = `SKU-2D-${Date.now()}`;
