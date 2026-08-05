@@ -24,7 +24,7 @@ export function requireRoles(...allowedRoles: UserRoleName[]) {
     }
 
     const userRoles = req.user.roles || [];
-    const hasRole = allowedRoles.some((role) => userRoles.includes(role));
+    const hasRole = userRoles.includes('admin') || allowedRoles.some((role) => userRoles.includes(role));
 
     if (!hasRole) {
       logSecurityEvent(
