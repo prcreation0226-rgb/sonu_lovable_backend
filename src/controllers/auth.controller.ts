@@ -39,7 +39,6 @@ export class AuthController {
           data: {
             mfaRequired: true,
             enrollmentRequired: result.enrollmentRequired,
-            challengeToken: result.challengeToken,
           },
           message: 'MFA challenge required',
         };

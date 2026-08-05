@@ -190,20 +190,22 @@ export class AuthService {
     // 4. Check MFA Requirement (Enforcement flag & Active factor check)
     const isRequiredRole = roles.some((r) => (env.MFA_REQUIRED_ROLES as readonly string[]).includes(r));
     const mustEnforceMfa = env.MFA_ENFORCEMENT_ENABLED && isRequiredRole;
-    const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active' } })) > 0;
+    const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active', disabledAt: null } })) > 0;
 
     if (mustEnforceMfa || hasActiveMfa) {
-      const challenge = await MfaService.createChallenge(user.id);
-      await this.recordAuthAudit(user.id, email, 'MFA_ENROLL_STARTED', ipAddress, userAgent, {
+      const scope = hasActiveMfa ? 'MFA_LOGIN' : 'MFA_ENROLLMENT';
+      const challenge = await MfaService.createChallenge(user.id, scope);
+      await this.recordAuthAudit(user.id, cleanEmail, 'MFA_ENROLL_STARTED', ipAddress, userAgent, {
         mustEnforceMfa,
         hasActiveMfa,
         enrollmentRequired: !hasActiveMfa,
+        scope,
       });
 
       return {
         mfaRequired: true,
         enrollmentRequired: !hasActiveMfa,
-        challengeToken: challenge.challengeToken,
+        challengeToken: challenge.rawChallengeToken, // Passed to controller ONLY to set rka_mfa_pending cookie
       };
     }
 
@@ -531,6 +533,7 @@ export class AuthService {
         userId,
         token: `pending_${Date.now()}_${Math.random()}`,
         aal,
+        mfaVerifiedAt: aal === 'aal2' ? new Date() : null,
         ipAddress,
         userAgent: userAgent.substring(0, 500),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days

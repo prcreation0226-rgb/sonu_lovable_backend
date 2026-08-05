@@ -1,4 +1,5 @@
 import { authenticator } from 'otplib';
+import bcrypt from 'bcrypt';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import {
@@ -8,6 +9,7 @@ import {
   hashRecoveryCode,
   verifyRecoveryCodeHash,
   generateChallengeToken,
+  hashChallengeToken,
 } from '../utils/mfaCrypto';
 import { writeAuditLog } from '../middleware/audit';
 
@@ -17,65 +19,6 @@ authenticator.options = {
 };
 
 export class MfaService {
-  /**
-   * Idempotently ensure MFA tables and columns exist in MySQL.
-   */
-  static async ensureMfaTablesExist(): Promise<void> {
-    try {
-      await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS mfa_factors (
-          id CHAR(36) NOT NULL PRIMARY KEY,
-          user_id CHAR(36) NOT NULL,
-          factor_type VARCHAR(20) NOT NULL DEFAULT 'totp',
-          status VARCHAR(20) NOT NULL DEFAULT 'pending',
-          secret_encrypted VARCHAR(500) NOT NULL,
-          otpauth_url TEXT,
-          last_used_step INT,
-          verified_at DATETIME(3),
-          created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-          updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-          INDEX idx_user_status (user_id, status),
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-
-      await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS mfa_challenges (
-          id CHAR(36) NOT NULL PRIMARY KEY,
-          user_id CHAR(36) NOT NULL,
-          factor_id CHAR(36),
-          challenge_token_encrypted VARCHAR(500) NOT NULL UNIQUE,
-          attempts_count INT NOT NULL DEFAULT 0,
-          max_attempts INT NOT NULL DEFAULT 5,
-          expires_at DATETIME(3) NOT NULL,
-          verified_at DATETIME(3),
-          created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-          INDEX idx_user_expires (user_id, expires_at),
-          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-          FOREIGN KEY (factor_id) REFERENCES mfa_factors(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-
-      // Check and add aal column to sessions
-      const sessionAalExists = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sessions' AND COLUMN_NAME = 'aal';`
-      );
-      if (!sessionAalExists || sessionAalExists.length === 0) {
-        await prisma.$executeRawUnsafe(`ALTER TABLE sessions ADD COLUMN aal VARCHAR(10) NOT NULL DEFAULT 'aal1';`);
-      }
-
-      // Check and add aal column to refresh_tokens
-      const refreshAalExists = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens' AND COLUMN_NAME = 'aal';`
-      );
-      if (!refreshAalExists || refreshAalExists.length === 0) {
-        await prisma.$executeRawUnsafe(`ALTER TABLE refresh_tokens ADD COLUMN aal VARCHAR(10) NOT NULL DEFAULT 'aal1';`);
-      }
-    } catch (error) {
-      console.warn('[MFA SCHEMA BOOTSTRAP] Non-fatal schema initialization note:', error);
-    }
-  }
-
   /**
    * Get MFA enrollment and factor status for user
    */
@@ -87,12 +30,12 @@ export class MfaService {
     if (!user) throw AppError.notFound('User');
 
     const factors = await prisma.mfaFactor.findMany({
-      where: { userId, status: 'active' },
+      where: { userId, status: 'active', disabledAt: null },
       select: { id: true, factorType: true, status: true, verifiedAt: true, createdAt: true },
     });
 
     const recoveryCodesCount = await prisma.mfaRecoveryCode.count({
-      where: { userId, usedAt: null },
+      where: { userId, usedAt: null, revokedAt: null },
     });
 
     return {
@@ -111,9 +54,10 @@ export class MfaService {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw AppError.notFound('User');
 
-    // Clean up existing pending factors
-    await prisma.mfaFactor.deleteMany({
+    // Soft-disable existing pending factors for user
+    await prisma.mfaFactor.updateMany({
       where: { userId, status: 'pending' },
+      data: { status: 'disabled', disabledAt: new Date() },
     });
 
     const secret = authenticator.generateSecret();
@@ -151,7 +95,7 @@ export class MfaService {
    */
   static async verifyEnrollment(userId: string, factorId: string, code: string, clientIp: string) {
     const factor = await prisma.mfaFactor.findFirst({
-      where: { id: factorId, userId },
+      where: { id: factorId, userId, disabledAt: null },
     });
     if (!factor) throw AppError.notFound('MFA Factor');
 
@@ -167,34 +111,53 @@ export class MfaService {
       throw AppError.badRequest('MFA code already used. Please wait for the next 6-digit code.');
     }
 
+    // Atomic TOTP step update
+    const updatedCount = await prisma.$executeRaw`
+      UPDATE mfa_factors 
+      SET last_used_step = ${currentStep}
+      WHERE id = ${factor.id} AND (last_used_step IS NULL OR last_used_step < ${currentStep})
+    `;
+
+    if (Number(updatedCount) === 0) {
+      throw AppError.badRequest('MFA code already used. Please wait for the next 6-digit code.');
+    }
+
     const now = new Date();
 
-    // Activate factor
-    await prisma.mfaFactor.update({
-      where: { id: factor.id },
-      data: {
-        status: 'active',
-        verifiedAt: now,
-        lastUsedStep: currentStep,
-      },
+    // Soft-revoke previous recovery codes
+    await prisma.mfaRecoveryCode.updateMany({
+      where: { userId, revokedAt: null, usedAt: null },
+      data: { revokedAt: now },
     });
 
-    // Mark user MFA enabled
-    await prisma.user.update({
-      where: { id: userId },
-      data: { mfaEnabled: true },
-    });
-
-    // Delete previous recovery codes if any
-    await prisma.mfaRecoveryCode.deleteMany({ where: { userId } });
-
-    // Generate 10 new recovery codes
+    // Generate 10 new recovery codes hashed with HMAC-SHA256
     const recoveryCodes = generateRecoveryCodes(10);
-    await prisma.mfaRecoveryCode.createMany({
-      data: recoveryCodes.map((code) => ({
-        userId,
-        codeHash: hashRecoveryCode(code),
-      })),
+
+    await prisma.$transaction(async (tx) => {
+      // Activate factor
+      await tx.mfaFactor.update({
+        where: { id: factor.id },
+        data: {
+          status: 'active',
+          verifiedAt: now,
+        },
+      });
+
+      // Mark user MFA enabled
+      await tx.user.update({
+        where: { id: userId },
+        data: { mfaEnabled: true },
+      });
+
+      // Insert hashed recovery codes
+      for (const rc of recoveryCodes) {
+        await tx.mfaRecoveryCode.create({
+          data: {
+            userId,
+            codeHash: hashRecoveryCode(rc),
+          },
+        });
+      }
     });
 
     await writeAuditLog({
@@ -213,18 +176,21 @@ export class MfaService {
   }
 
   /**
-   * Create Login MFA Challenge
+   * Create Login or Enrollment MFA Challenge.
+   * Challenge token is hashed with HMAC-SHA256 before saving to DB.
+   * Returns opaque raw challenge token to be placed ONLY in HttpOnly cookie.
    */
-  static async createChallenge(userId: string, factorId?: string) {
-    const challengeToken = generateChallengeToken();
-    const challengeTokenEncrypted = encryptMfaSecret(challengeToken);
+  static async createChallenge(userId: string, scope: 'MFA_LOGIN' | 'MFA_ENROLLMENT' = 'MFA_LOGIN', factorId?: string) {
+    const rawChallengeToken = generateChallengeToken();
+    const challengeTokenHash = hashChallengeToken(rawChallengeToken);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     const challenge = await prisma.mfaChallenge.create({
       data: {
         userId,
         factorId: factorId || null,
-        challengeTokenEncrypted,
+        challengeTokenHash,
+        scope,
         attemptsCount: 0,
         maxAttempts: 5,
         expiresAt,
@@ -232,41 +198,68 @@ export class MfaService {
     });
 
     return {
-      challengeToken,
+      rawChallengeToken, // To be set in HttpOnly cookie ONLY
       challengeId: challenge.id,
       expiresAt,
     };
   }
 
   /**
-   * Verify Login MFA Challenge Code (6-digit TOTP)
+   * Cancel pending MFA Challenge
    */
-  static async verifyChallenge(challengeToken: string, code: string, clientIp: string) {
-    const challenges = await prisma.mfaChallenge.findMany({
-      where: {
-        expiresAt: { gt: new Date() },
-        verifiedAt: null,
-      },
+  static async cancelChallenge(rawChallengeToken: string, clientIp: string): Promise<void> {
+    const challengeTokenHash = hashChallengeToken(rawChallengeToken);
+    const challenge = await prisma.mfaChallenge.findUnique({
+      where: { challengeTokenHash },
+    });
+
+    if (challenge && !challenge.verifiedAt && !challenge.revokedAt) {
+      await prisma.mfaChallenge.update({
+        where: { id: challenge.id },
+        data: { revokedAt: new Date() },
+      });
+
+      await writeAuditLog({
+        userId: challenge.userId,
+        action: 'MFA_CHALLENGE_CANCELLED',
+        resourceType: 'mfa_challenge',
+        resourceId: challenge.id,
+        ipAddress: clientIp,
+      });
+    }
+  }
+
+  /**
+   * Verify Login MFA Challenge Code (6-digit TOTP).
+   * Enforces challenge scope matching. Failed attempt counters commit outside transactions.
+   */
+  static async verifyChallenge(
+    rawChallengeToken: string,
+    code: string,
+    clientIp: string,
+    expectedScope: 'MFA_LOGIN' | 'MFA_ENROLLMENT' = 'MFA_LOGIN'
+  ) {
+    const challengeTokenHash = hashChallengeToken(rawChallengeToken);
+
+    const targetChallenge = await prisma.mfaChallenge.findUnique({
+      where: { challengeTokenHash },
       include: {
         user: { select: { id: true, email: true, isActive: true, deletedAt: true } },
       },
     });
 
-    let targetChallenge: (typeof challenges)[0] | null = null;
-    for (const ch of challenges) {
-      try {
-        const decryptedToken = decryptMfaSecret(ch.challengeTokenEncrypted);
-        if (decryptedToken === challengeToken) {
-          targetChallenge = ch;
-          break;
-        }
-      } catch (e) {
-        // Skip non-matching decryption
-      }
+    if (
+      !targetChallenge ||
+      targetChallenge.expiresAt <= new Date() ||
+      targetChallenge.verifiedAt !== null ||
+      targetChallenge.revokedAt !== null
+    ) {
+      throw AppError.badRequest('MFA challenge expired or invalid');
     }
 
-    if (!targetChallenge) {
-      throw AppError.badRequest('MFA challenge expired or invalid');
+    // Strict Scope Enforcement
+    if (targetChallenge.scope !== expectedScope) {
+      throw AppError.forbidden(`Invalid MFA challenge scope. Expected ${expectedScope}, got ${targetChallenge.scope}`);
     }
 
     if (!targetChallenge.user || !targetChallenge.user.isActive || targetChallenge.user.deletedAt !== null) {
@@ -293,7 +286,7 @@ export class MfaService {
     }
 
     const factor = await prisma.mfaFactor.findFirst({
-      where: { userId: targetChallenge.userId, status: 'active' },
+      where: { userId: targetChallenge.userId, status: 'active', disabledAt: null },
     });
 
     if (!factor) {
@@ -304,6 +297,7 @@ export class MfaService {
     const isValid = authenticator.verify({ token: code, secret: plaintextSecret });
 
     if (!isValid) {
+      // Counter persistence: commit attempt increment immediately outside transaction
       const updatedAttempts = targetChallenge.attemptsCount + 1;
       await prisma.mfaChallenge.update({
         where: { id: targetChallenge.id },
@@ -331,16 +325,23 @@ export class MfaService {
       throw AppError.badRequest('MFA code already used. Please wait for the next 6-digit code.');
     }
 
+    // Atomic TOTP step update
+    const updatedStepCount = await prisma.$executeRaw`
+      UPDATE mfa_factors 
+      SET last_used_step = ${currentStep}
+      WHERE id = ${factor.id} AND (last_used_step IS NULL OR last_used_step < ${currentStep})
+    `;
+
+    if (Number(updatedStepCount) === 0) {
+      throw AppError.badRequest('MFA code already used. Please wait for the next 6-digit code.');
+    }
+
     const now = new Date();
-    // Mark challenge verified & update factor lastUsedStep
+
+    // Mark challenge verified
     await prisma.mfaChallenge.update({
       where: { id: targetChallenge.id },
       data: { verifiedAt: now },
-    });
-
-    await prisma.mfaFactor.update({
-      where: { id: factor.id },
-      data: { lastUsedStep: currentStep },
     });
 
     await writeAuditLog({
@@ -362,7 +363,7 @@ export class MfaService {
    */
   static async verifyRecoveryCode(userId: string, code: string, clientIp: string) {
     const recoveryCodes = await prisma.mfaRecoveryCode.findMany({
-      where: { userId, usedAt: null },
+      where: { userId, usedAt: null, revokedAt: null },
     });
 
     let matchedCodeRecord: (typeof recoveryCodes)[0] | null = null;
@@ -401,18 +402,26 @@ export class MfaService {
   }
 
   /**
-   * Regenerate Recovery Codes
+   * Regenerate Recovery Codes (Requires recent AAL2)
    */
   static async regenerateRecoveryCodes(userId: string, clientIp: string) {
-    await prisma.mfaRecoveryCode.deleteMany({ where: { userId } });
+    const now = new Date();
+
+    // Soft-revoke existing unused recovery codes
+    await prisma.mfaRecoveryCode.updateMany({
+      where: { userId, usedAt: null, revokedAt: null },
+      data: { revokedAt: now },
+    });
 
     const newCodes = generateRecoveryCodes(10);
-    await prisma.mfaRecoveryCode.createMany({
-      data: newCodes.map((code) => ({
-        userId,
-        codeHash: hashRecoveryCode(code),
-      })),
-    });
+    for (const code of newCodes) {
+      await prisma.mfaRecoveryCode.create({
+        data: {
+          userId,
+          codeHash: hashRecoveryCode(code),
+        },
+      });
+    }
 
     await writeAuditLog({
       userId,
@@ -427,16 +436,99 @@ export class MfaService {
 
   /**
    * Disable MFA for User
+   * Requires password check + valid current TOTP code or recovery code.
+   * Revokes all user sessions and refresh tokens in DB (including current session).
    */
-  static async disableMfa(userId: string, clientIp: string) {
+  static async disableMfa(
+    userId: string,
+    passwordInput: string | undefined,
+    codeInput: string | undefined,
+    clientIp: string
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw AppError.notFound('User');
+
+    if (!passwordInput) {
+      throw AppError.badRequest('Current password is required to disable MFA');
+    }
+
+    const isPasswordValid = await bcrypt.compare(passwordInput, user.passwordHash);
+    if (!isPasswordValid) {
+      throw AppError.unauthorized('Invalid password');
+    }
+
+    if (!codeInput) {
+      throw AppError.badRequest('Verification code or recovery code is required to disable MFA');
+    }
+
+    // Verify code as either TOTP or Recovery Code
+    let verified = false;
+    const factor = await prisma.mfaFactor.findFirst({
+      where: { userId, status: 'active', disabledAt: null },
+    });
+
+    if (factor) {
+      const plaintextSecret = decryptMfaSecret(factor.secretEncrypted);
+      if (authenticator.verify({ token: codeInput, secret: plaintextSecret })) {
+        verified = true;
+      }
+    }
+
+    if (!verified) {
+      // Check recovery code
+      const recoveryCodes = await prisma.mfaRecoveryCode.findMany({
+        where: { userId, usedAt: null, revokedAt: null },
+      });
+      for (const rc of recoveryCodes) {
+        if (verifyRecoveryCodeHash(codeInput, rc.codeHash)) {
+          verified = true;
+          await prisma.mfaRecoveryCode.update({
+            where: { id: rc.id },
+            data: { usedAt: new Date() },
+          });
+          break;
+        }
+      }
+    }
+
+    if (!verified) {
+      throw AppError.badRequest('Invalid verification code or recovery code');
+    }
+
+    const now = new Date();
+
+    // Soft-disable factors
     await prisma.mfaFactor.updateMany({
-      where: { userId },
-      data: { status: 'disabled' },
+      where: { userId, disabledAt: null },
+      data: { status: 'disabled', disabledAt: now },
+    });
+
+    // Soft-revoke recovery codes
+    await prisma.mfaRecoveryCode.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: now },
+    });
+
+    // Soft-revoke challenges
+    await prisma.mfaChallenge.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: now },
     });
 
     await prisma.user.update({
       where: { id: userId },
       data: { mfaEnabled: false },
+    });
+
+    // Revoke ALL user sessions and refresh tokens in DB (including current session)
+    await prisma.session.updateMany({
+      where: { userId, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    await prisma.refreshToken.updateMany({
+      where: { userId, isRevoked: false },
+      data: { isRevoked: true },
     });
 
     await writeAuditLog({
@@ -451,28 +543,68 @@ export class MfaService {
   }
 
   /**
-   * Admin Reset MFA for Target User
+   * Admin Reset MFA for Target User.
+   * Requires admin role + recent admin AAL2 + mandatory sanitized reason.
+   * Revokes target user sessions and refresh tokens.
    */
-  static async adminResetMfa(adminUserId: string, targetUserId: string, clientIp: string) {
+  static async adminResetMfa(
+    adminUserId: string,
+    targetUserId: string,
+    rawReason: string,
+    clientIp: string
+  ) {
+    if (!rawReason || typeof rawReason !== 'string' || !rawReason.trim()) {
+      throw AppError.badRequest('Sanitized reset reason is required');
+    }
+
+    // Sanitize reason (strip HTML/control chars, enforce max 255 chars)
+    const sanitizedReason = rawReason
+      .trim()
+      .replace(/<[^>]*>?/gm, '')
+      .replace(/[\r\n\t]/g, ' ')
+      .substring(0, 255);
+
+    if (sanitizedReason.length < 5) {
+      throw AppError.badRequest('Reset reason must be at least 5 characters');
+    }
+
     const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
     if (!targetUser) throw AppError.notFound('Target User');
 
+    const now = new Date();
+
+    // Soft-disable factors
     await prisma.mfaFactor.updateMany({
-      where: { userId: targetUserId },
-      data: { status: 'disabled' },
+      where: { userId: targetUserId, disabledAt: null },
+      data: { status: 'disabled', disabledAt: now },
     });
 
-    await prisma.mfaChallenge.deleteMany({
-      where: { userId: targetUserId },
+    // Soft-revoke challenges
+    await prisma.mfaChallenge.updateMany({
+      where: { userId: targetUserId, revokedAt: null },
+      data: { revokedAt: now },
     });
 
-    await prisma.mfaRecoveryCode.deleteMany({
-      where: { userId: targetUserId },
+    // Soft-revoke recovery codes
+    await prisma.mfaRecoveryCode.updateMany({
+      where: { userId: targetUserId, revokedAt: null },
+      data: { revokedAt: now },
     });
 
     await prisma.user.update({
       where: { id: targetUserId },
       data: { mfaEnabled: false },
+    });
+
+    // Revoke target user's active sessions & refresh tokens in DB
+    await prisma.session.updateMany({
+      where: { userId: targetUserId, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    await prisma.refreshToken.updateMany({
+      where: { userId: targetUserId, isRevoked: false },
+      data: { isRevoked: true },
     });
 
     await writeAuditLog({
@@ -481,34 +613,50 @@ export class MfaService {
       resourceType: 'user',
       resourceId: targetUserId,
       ipAddress: clientIp,
+      newValue: {
+        actorId: adminUserId,
+        targetId: targetUserId,
+        reason: sanitizedReason,
+      },
     });
 
     return { success: true };
   }
 
   /**
-   * Look up a userId from an MFA challenge token without verifying the TOTP code.
-   * Used by the recovery code flow to identify the user from a pending MFA challenge.
+   * Look up a userId from an MFA challenge token by checking its HMAC hash.
+   * Validates expiration, revocation, and optional scope.
    */
-  static async getUserIdFromChallengeToken(challengeToken: string): Promise<string | null> {
-    const challenges = await prisma.mfaChallenge.findMany({
-      where: {
-        expiresAt: { gt: new Date() },
-        verifiedAt: null,
+  static async getUserIdFromChallengeToken(
+    rawChallengeToken: string,
+    expectedScope?: string
+  ): Promise<string | null> {
+    const challengeTokenHash = hashChallengeToken(rawChallengeToken);
+
+    const challenge = await prisma.mfaChallenge.findUnique({
+      where: { challengeTokenHash },
+      select: {
+        userId: true,
+        expiresAt: true,
+        verifiedAt: true,
+        revokedAt: true,
+        scope: true,
       },
     });
 
-    for (const ch of challenges) {
-      try {
-        const decryptedToken = decryptMfaSecret(ch.challengeTokenEncrypted);
-        if (decryptedToken === challengeToken) {
-          return ch.userId;
-        }
-      } catch (e) {
-        // Skip non-matching decryption
-      }
+    if (
+      !challenge ||
+      challenge.expiresAt <= new Date() ||
+      challenge.verifiedAt !== null ||
+      challenge.revokedAt !== null
+    ) {
+      return null;
     }
 
-    return null;
+    if (expectedScope && challenge.scope !== expectedScope) {
+      return null;
+    }
+
+    return challenge.userId;
   }
 }

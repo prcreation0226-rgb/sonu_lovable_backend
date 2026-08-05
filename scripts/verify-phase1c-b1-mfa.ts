@@ -1,7 +1,6 @@
 import http from 'http';
 import https from 'https';
 import { authenticator } from 'otplib';
-import { env } from '../src/config/env';
 
 // Configure HTTPS Agent for direct IP connection to Railway live backend
 const agent = new https.Agent({
@@ -92,7 +91,7 @@ async function runMfaVerificationSuite() {
   console.log('  PHASE 1C-B1 — BACKEND TOTP MFA FOUNDATION VERIFICATION SUITE');
   console.log('================================================================\n');
 
-  // Seed test accounts
+  // 1. Seed test accounts
   console.log('1. Seeding test accounts on live Railway database...');
   const seedRes = await makeRequest('POST', '/auth/seed-test-accounts');
   if (seedRes.status !== 200) {
@@ -108,7 +107,6 @@ async function runMfaVerificationSuite() {
     password: 'Phase1Test!2026',
   });
 
-  console.log('adminLogin status:', adminLogin.status, 'body:', adminLogin.body, 'cookies:', adminLogin.cookies);
   const adminCookies = adminLogin.cookies;
 
   // Test 1: Standard login works normally when MFA_ENFORCEMENT_ENABLED=false
@@ -134,7 +132,6 @@ async function runMfaVerificationSuite() {
 
   // Test 3: POST /auth/mfa/enroll/start (Voluntary enrollment start)
   const startRes = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, adminCookies);
-  console.log('Enroll Start response body:', JSON.stringify(startRes.body, null, 2));
   const factorId = startRes.body.data?.factorId;
   const totpSecret = startRes.body.data?.secret;
   const otpauthUrl = startRes.body.data?.otpauthUrl;
@@ -207,7 +204,7 @@ async function runMfaVerificationSuite() {
     notes: `mfaEnabled: true, activeFactors: ${statusRes2.body.data?.activeFactors?.length}`,
   });
 
-  // Test 8: Login when user has active MFA factor triggers MFA challenge
+  // Enroll NP user for login challenge testing
   const npLogin1 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -224,6 +221,7 @@ async function runMfaVerificationSuite() {
     code: npCode,
   }, npCookies1);
 
+  // Test 8: Login when user has active MFA factor triggers MFA challenge
   const mfaLogin = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -231,14 +229,15 @@ async function runMfaVerificationSuite() {
 
   const hasMfaPendingCookie = mfaLogin.cookies.some((c) => c.includes('rka_mfa_pending'));
   const hasAccessCookie = mfaLogin.cookies.some((c) => c.includes('rka_access'));
+  const hasChallengeTokenInBody = 'challengeToken' in (mfaLogin.body.data || {});
 
   results.push({
     num: 8,
-    name: 'Login for MFA-enabled user returns 202 and rka_mfa_pending cookie',
+    name: 'Login returns 202 and rka_mfa_pending cookie without token in body',
     expected: '202',
     actual: `${mfaLogin.status}`,
-    status: mfaLogin.status === 202 && mfaLogin.body.data?.mfaRequired === true && hasMfaPendingCookie && !hasAccessCookie ? 'PASS' : 'FAIL',
-    notes: 'No access/refresh cookies issued yet. Set HttpOnly rka_mfa_pending cookie.',
+    status: mfaLogin.status === 202 && mfaLogin.body.data?.mfaRequired === true && hasMfaPendingCookie && !hasAccessCookie && !hasChallengeTokenInBody ? 'PASS' : 'FAIL',
+    notes: 'Issued HttpOnly rka_mfa_pending cookie ONLY. Zero challenge tokens in response body.',
   });
 
   // Test 9: Complete MFA challenge with wrong code fails
@@ -258,7 +257,7 @@ async function runMfaVerificationSuite() {
     notes: 'Increments attemptsCount on challenge record',
   });
 
-  // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
+  // Wait for TOTP step boundary
   const currentStep = Math.floor(Date.now() / 30000);
   let nextStep = Math.floor(Date.now() / 30000);
   while (nextStep === currentStep) {
@@ -272,6 +271,7 @@ async function runMfaVerificationSuite() {
     password: 'Phase1Test!2026',
   });
 
+  // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
   const validChallengeCode = authenticator.generate(npSecret);
   const mfaChallengeRes = await makeRequest(
     'POST',
@@ -292,7 +292,23 @@ async function runMfaVerificationSuite() {
     notes: 'Issued AAL2 session cookies & cleared rka_mfa_pending cookie',
   });
 
-  // Test 11: Recovery code works once
+  // Test 11: POST /auth/mfa/cancel safely cancels pending challenge
+  const cancelLogin = await makeRequest('POST', '/auth/login', {
+    email: 'phase1-np@radiantilyk.com',
+    password: 'Phase1Test!2026',
+  });
+  const cancelRes = await makeRequest('POST', '/auth/mfa/cancel', undefined, cancelLogin.cookies);
+
+  results.push({
+    num: 11,
+    name: 'POST /auth/mfa/cancel revokes challenge & clears pending cookie',
+    expected: '200',
+    actual: `${cancelRes.status}`,
+    status: cancelRes.status === 200 && cancelRes.body.success ? 'PASS' : 'FAIL',
+    notes: 'Pending challenge revoked in DB and rka_mfa_pending cookie cleared symmetrically',
+  });
+
+  // Test 12: Recovery code works once
   if (recoveryCodes.length > 0) {
     const firstRecoveryCode = recoveryCodes[0];
     
@@ -310,7 +326,7 @@ async function runMfaVerificationSuite() {
     );
 
     results.push({
-      num: 11,
+      num: 12,
       name: 'Recovery code verification succeeds for valid code',
       expected: '200',
       actual: `${recoveryRes1.status}`,
@@ -318,7 +334,7 @@ async function runMfaVerificationSuite() {
       notes: 'Recovery code verified and marked usedAt in DB',
     });
 
-    // Test 12: Used recovery code cannot be used again
+    // Test 13: Used recovery code cannot be used again
     const mfaLogin3 = await makeRequest('POST', '/auth/login', {
       email: 'phase1-admin@radiantilyk.com',
       password: 'Phase1Test!2026',
@@ -332,7 +348,7 @@ async function runMfaVerificationSuite() {
     );
 
     results.push({
-      num: 12,
+      num: 13,
       name: 'Reusing consumed recovery code is blocked',
       expected: '400',
       actual: `${recoveryRes2.status}`,
@@ -341,45 +357,56 @@ async function runMfaVerificationSuite() {
     });
   }
 
-  // Test 13: Regenerate recovery codes
+  // Test 14: Regenerate recovery codes (requires recent AAL2)
   const regenRes = await makeRequest('POST', '/auth/mfa/recovery/regenerate', undefined, mfaAccessCookies);
   const newRecoveryCodes = regenRes.body.data?.recoveryCodes || [];
 
   results.push({
-    num: 13,
-    name: 'Regenerate recovery codes',
+    num: 14,
+    name: 'Regenerate recovery codes (requires recent AAL2)',
     expected: '200',
     actual: `${regenRes.status}`,
     status: regenRes.status === 200 && newRecoveryCodes.length === 10 ? 'PASS' : 'FAIL',
     notes: `Generated ${newRecoveryCodes.length} new recovery codes`,
   });
 
-  // Test 14: Disable MFA
-  const disableRes = await makeRequest('POST', '/auth/mfa/disable', undefined, mfaAccessCookies);
-  results.push({
-    num: 14,
-    name: 'Disable MFA for authenticated user',
-    expected: '200',
-    actual: `${disableRes.status}`,
-    status: disableRes.status === 200 && disableRes.body.success ? 'PASS' : 'FAIL',
-    notes: 'MFA status set to disabled in DB',
-  });
-
-  // Test 15: Admin Reset MFA for target user
-  const adminResetRes = await makeRequest(
-    'POST',
-    '/admin/users/test-user-id/mfa/reset',
-    undefined,
-    mfaAccessCookies
-  );
+  // Test 15: Disable MFA (requires password + code + revokes all sessions)
+  const npDisableCode = authenticator.generate(npSecret);
+  const disableRes = await makeRequest('POST', '/auth/mfa/disable', {
+    password: 'Phase1Test!2026',
+    code: npDisableCode,
+  }, mfaAccessCookies);
 
   results.push({
     num: 15,
+    name: 'Disable MFA for user (requires password + code + session revocation)',
+    expected: '200',
+    actual: `${disableRes.status}`,
+    status: disableRes.status === 200 && disableRes.body.success ? 'PASS' : 'FAIL',
+    notes: 'Factors disabled, recovery codes revoked, all user sessions revoked in DB',
+  });
+
+  // Test 16: Admin Reset MFA for target user (requires admin role + recent admin AAL2 + reason)
+  // First re-authenticate admin with fresh login
+  const adminLogin2 = await makeRequest('POST', '/auth/login', {
+    email: 'phase1-admin@radiantilyk.com',
+    password: 'Phase1Test!2026',
+  });
+
+  const adminResetRes = await makeRequest(
+    'POST',
+    '/admin/users/4da0afa7-93ba-482a-b4b9-fa631c014c5c/mfa/reset',
+    { reason: 'Mandatory security audit reset test for admin target user' },
+    adminLogin2.cookies
+  );
+
+  results.push({
+    num: 16,
     name: 'Admin Reset MFA endpoint (/admin/users/:userId/mfa/reset)',
     expected: '200',
     actual: `${adminResetRes.status}`,
-    status: adminResetRes.status === 200 || adminResetRes.status === 404 ? 'PASS' : 'FAIL',
-    notes: 'Admin-only endpoint verified with authorization check',
+    status: adminResetRes.status === 200 ? 'PASS' : 'FAIL',
+    notes: 'Admin reset succeeded with sanitized reason and target session revocation',
   });
 
   // Print Summary Table
