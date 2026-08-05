@@ -188,9 +188,16 @@ async function runPhase2aVerification() {
   const locationRes = await makeRequest('GET', '/locations', undefined, adminCookies);
   const servicesRes = await makeRequest('GET', '/services', undefined, adminCookies);
 
-  const staffId = staffRes.body.data?.[0]?.id;
-  const locationId = locationRes.body.data?.[0]?.id;
-  const serviceId = servicesRes.body.data?.[0]?.id;
+  // Debug: log reference data structure
+  console.log(`   Staff endpoint: HTTP ${staffRes.status}, keys: ${JSON.stringify(Object.keys(staffRes.body))}, first: ${JSON.stringify(staffRes.body.data?.[0]?.id || staffRes.body[0]?.id || 'NONE')}`);
+  console.log(`   Location endpoint: HTTP ${locationRes.status}, keys: ${JSON.stringify(Object.keys(locationRes.body))}, first: ${JSON.stringify(locationRes.body.data?.[0]?.id || locationRes.body[0]?.id || 'NONE')}`);
+  console.log(`   Services endpoint: HTTP ${servicesRes.status}, keys: ${JSON.stringify(Object.keys(servicesRes.body))}, first: ${JSON.stringify(servicesRes.body.data?.[0]?.id || servicesRes.body[0]?.id || 'NONE')}`);
+
+  const staffId = staffRes.body.data?.[0]?.id || staffRes.body[0]?.id;
+  const locationId = locationRes.body.data?.[0]?.id || locationRes.body[0]?.id;
+  const serviceId = servicesRes.body.data?.[0]?.id || servicesRes.body[0]?.id;
+
+  console.log(`   Resolved: staffId=${staffId}, locationId=${locationId}, serviceId=${serviceId}`);
 
   const startAt = new Date(Date.now() + 86400000).toISOString(); // Tomorrow
   const endAt = new Date(Date.now() + 86400000 + 3600000).toISOString();
@@ -209,6 +216,10 @@ async function runPhase2aVerification() {
     },
     adminCookies
   );
+
+  if (createApptRes.status !== 201) {
+    console.log(`   Appointment creation error: ${JSON.stringify(createApptRes.body)}`);
+  }
 
   const apptId = createApptRes.body.data?.id;
   const passT4 = createApptRes.status === 201 && !!apptId;
@@ -265,11 +276,11 @@ async function runPhase2aVerification() {
   // Test 7: Appointment Reschedule (Admin Permitted)
   // ----------------------------------------------------------------
   console.log('9. Test 7: Rescheduling appointment...');
-  const newStartAt = new Date(Date.now() + 86400000 + 7200000).toISOString();
+  const rescheduleStartAt = new Date(Date.now() + 86400000 + 7200000).toISOString();
   const rescheduleRes = await makeRequest(
     'POST',
     `/appointments/${apptId}/reschedule`,
-    { newStartAt, reason: 'Patient requested time change' },
+    { startAt: rescheduleStartAt, reason: 'Patient requested time change' },
     adminCookies
   );
   const passT7 = rescheduleRes.status === 200;
