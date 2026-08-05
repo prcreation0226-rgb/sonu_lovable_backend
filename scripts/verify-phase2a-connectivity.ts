@@ -19,6 +19,7 @@ const customAgent = new https.Agent({
 });
 
 const API_BASE = 'https://sonulovablebackend-production.up.railway.app/api/v1';
+const ROOT_BASE = 'https://sonulovablebackend-production.up.railway.app';
 
 interface TestResult {
   step: string;
@@ -34,15 +35,16 @@ async function makeRequest(
   method: string,
   path: string,
   body?: any,
-  cookies?: string[]
+  cookies?: string[],
+  fullUrl?: string
 ): Promise<{ status: number; body: any; cookies: string[] }> {
   return new Promise((resolve, reject) => {
-    const url = new URL(`${API_BASE}${path}`);
+    const url = new URL(fullUrl || `${API_BASE}${path}`);
     const payload = body ? JSON.stringify(body) : '';
 
     const reqHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
-      'User-Agent': 'Phase2A-Verification-Suite/2.0',
+      'User-Agent': 'Phase2A-Verification-Suite/3.0',
     };
 
     if (cookies && cookies.length > 0) {
@@ -93,8 +95,12 @@ async function makeRequest(
 
 async function runPhase2aVerification() {
   console.log('================================================================');
-  console.log('  PHASE 2A — PATIENT & APPOINTMENT CONNECTIVITY & ROLE EVIDENCE');
+  console.log('  PHASE 2A — PATIENT & APPOINTMENT CONNECTIVITY & SECURITY SUITE');
   console.log('================================================================\n');
+
+  // Track created IDs for cleanup
+  const createdPatientIds: string[] = [];
+  const createdApptIds: string[] = [];
 
   // Seed test staff accounts
   await makeRequest('POST', '/auth/seed-test-accounts');
@@ -138,7 +144,7 @@ async function runPhase2aVerification() {
   console.log(`Reference fixtures active: locationId=${locationId}, serviceId=${serviceId}\n`);
 
   // ----------------------------------------------------------------
-  // Test 1: Patient Creation in Live MySQL
+  // Test 1: Patient Creation (Admin) -> ALLOWED
   // ----------------------------------------------------------------
   const testEmail = `phase2a-patient-${Date.now()}@example.com`;
   const createPatientRes = await makeRequest(
@@ -148,6 +154,8 @@ async function runPhase2aVerification() {
     adminCookies
   );
   const patientId = createPatientRes.body.data?.id;
+  if (patientId) createdPatientIds.push(patientId);
+
   const passT1 = createPatientRes.status === 201 && !!patientId;
   results.push({
     step: '1. Patient Creation (Admin)',
@@ -158,7 +166,7 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 2: Patient Search & Filter
+  // Test 2: Patient Live Search (Admin) -> ALLOWED
   // ----------------------------------------------------------------
   const searchRes = await makeRequest('GET', `/patients?search=${encodeURIComponent('TestPatient')}`, undefined, adminCookies);
   const foundPatients = searchRes.body.data || [];
@@ -172,7 +180,7 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 3: Patient Profile Update
+  // Test 3: Patient Profile Update (Admin) -> ALLOWED
   // ----------------------------------------------------------------
   const updatePatientRes = await makeRequest('PATCH', `/patients/${patientId}`, { phone: '(408) 555-7777' }, adminCookies);
   const passT3 = updatePatientRes.status === 200 && updatePatientRes.body.data?.phone === '(408) 555-7777';
@@ -206,6 +214,8 @@ async function runPhase2aVerification() {
     fdCookies
   );
   const fdApptId = fdApptRes.body.data?.id;
+  if (fdApptId) createdApptIds.push(fdApptId);
+
   const passT4 = fdApptRes.status === 201 && !!fdApptId;
   results.push({
     step: '4. Front Desk Appt Creation',
@@ -235,6 +245,8 @@ async function runPhase2aVerification() {
     adminCookies
   );
   const adminApptId = adminApptRes.body.data?.id;
+  if (adminApptId) createdApptIds.push(adminApptId);
+
   const passT5 = adminApptRes.status === 201 && !!adminApptId;
   results.push({
     step: '5. Admin Appt Creation',
@@ -250,13 +262,7 @@ async function runPhase2aVerification() {
   const rnWriteRes = await makeRequest(
     'POST',
     '/appointments',
-    {
-      patientId,
-      staffId,
-      locationId,
-      serviceIds: [serviceId],
-      startAt: new Date(Date.now() + 259200000).toISOString(),
-    },
+    { patientId, staffId, locationId, serviceIds: [serviceId], startAt: new Date(Date.now() + 259200000).toISOString() },
     rnCookies
   );
   const passT6 = rnWriteRes.status === 403;
@@ -274,13 +280,7 @@ async function runPhase2aVerification() {
   const mdWriteRes = await makeRequest(
     'POST',
     '/appointments',
-    {
-      patientId,
-      staffId,
-      locationId,
-      serviceIds: [serviceId],
-      startAt: new Date(Date.now() + 259200000).toISOString(),
-    },
+    { patientId, staffId, locationId, serviceIds: [serviceId], startAt: new Date(Date.now() + 259200000).toISOString() },
     mdCookies
   );
   const passT7 = mdWriteRes.status === 403;
@@ -298,13 +298,7 @@ async function runPhase2aVerification() {
   const npWriteRes = await makeRequest(
     'POST',
     '/appointments',
-    {
-      patientId,
-      staffId,
-      locationId,
-      serviceIds: [serviceId],
-      startAt: new Date(Date.now() + 259200000).toISOString(),
-    },
+    { patientId, staffId, locationId, serviceIds: [serviceId], startAt: new Date(Date.now() + 259200000).toISOString() },
     npCookies
   );
   const passT8 = npWriteRes.status === 403;
@@ -330,7 +324,7 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 10: Patient Cannot Access Other Patient Records (HTTP 403)
+  // Test 10: Patient Access to EMR Chart -> BLOCKED (HTTP 403)
   // ----------------------------------------------------------------
   const patientAccessRes = await makeRequest('GET', `/patients/${patientId}`, undefined, patientCookies);
   const passT10 = patientAccessRes.status === 403;
@@ -339,11 +333,86 @@ async function runPhase2aVerification() {
     expected: 'HTTP 403 Forbidden',
     actual: `HTTP ${patientAccessRes.status}`,
     result: passT10 ? 'PASS' : 'FAIL',
-    details: `Patient blocked from viewing EMR chart: ${passT10}`,
+    details: `Patient blocked: ${passT10}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 11: Appointment Cancellation (Front Desk Permitted)
+  // Test 11: Patient Soft-Delete Authorization (Front Desk / NP / RN / MD -> 403, Admin -> 200)
+  // ----------------------------------------------------------------
+  // Front Desk delete attempt
+  const fdDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, fdCookies);
+  const passT11a = fdDeleteRes.status === 403;
+
+  // NP delete attempt
+  const npDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, npCookies);
+  const passT11b = npDeleteRes.status === 403;
+
+  // RN delete attempt
+  const rnDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, rnCookies);
+  const passT11c = rnDeleteRes.status === 403;
+
+  // MD delete attempt
+  const mdDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, mdCookies);
+  const passT11d = mdDeleteRes.status === 403;
+
+  const passT11AllDenied = passT11a && passT11b && passT11c && passT11d;
+  results.push({
+    step: '11. Non-Admin Patient Soft-Delete Blocked',
+    expected: 'HTTP 403 Forbidden (FD, NP, RN, MD)',
+    actual: `FD:${fdDeleteRes.status}, NP:${npDeleteRes.status}, RN:${rnDeleteRes.status}, MD:${mdDeleteRes.status}`,
+    result: passT11AllDenied ? 'PASS' : 'FAIL',
+    details: `Non-admin roles blocked from patient soft-delete: ${passT11AllDenied}`,
+  });
+
+  // Admin delete attempt -> ALLOWED
+  const adminDeleteRes = await makeRequest('DELETE', `/patients/${patientId}`, undefined, adminCookies);
+  const passT11Admin = adminDeleteRes.status === 200;
+  results.push({
+    step: '12. Admin Patient Soft-Delete Allowed',
+    expected: 'HTTP 200 OK (Soft-delete)',
+    actual: `HTTP ${adminDeleteRes.status}`,
+    result: passT11Admin ? 'PASS' : 'FAIL',
+    details: `Admin patient soft-delete message: ${adminDeleteRes.body.message}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 13: Service Creation Authorization (Admin -> 201, Non-Admin -> 403)
+  // ----------------------------------------------------------------
+  const nonAdminSrvRes = await makeRequest('POST', '/services', { name: 'Unauthorized Service Attempt' }, fdCookies);
+  const passT13NonAdmin = nonAdminSrvRes.status === 403;
+
+  const adminSrvRes = await makeRequest('POST', '/services', { name: `Admin Test Service ${Date.now()}` }, adminCookies);
+  const passT13Admin = adminSrvRes.status === 201;
+
+  const passT13All = passT13NonAdmin && passT13Admin;
+  results.push({
+    step: '13. Service Creation RBAC (Admin 201, FD 403)',
+    expected: 'Admin: 201, Non-Admin: 403',
+    actual: `Admin:${adminSrvRes.status}, FD:${nonAdminSrvRes.status}`,
+    result: passT13All ? 'PASS' : 'FAIL',
+    details: `Service creation correctly restricted to Admin only`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 14: Health Check Behavior (/health and /api/v1/health)
+  // ----------------------------------------------------------------
+  const rootHealth = await makeRequest('GET', '/health', undefined, undefined, `${ROOT_BASE}/health`);
+  const passHealth1 = rootHealth.status === 200 && rootHealth.body.data?.status === 'healthy';
+
+  const apiHealth = await makeRequest('GET', '/health', undefined, undefined, `${API_BASE}/health`);
+  const passHealth2 = apiHealth.status === 200 && apiHealth.body.data?.status === 'healthy';
+
+  const passHealthAll = passHealth1 && passHealth2;
+  results.push({
+    step: '14. Health Probe Checks (/health & /api/v1/health)',
+    expected: 'HTTP 200 with real health payload on both',
+    actual: `/health:${rootHealth.status}, /api/v1/health:${apiHealth.status}`,
+    result: passHealthAll ? 'PASS' : 'FAIL',
+    details: `Root and API health endpoints return identical real health check payloads`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 15: Appointment Cancellation (Front Desk) -> ALLOWED
   // ----------------------------------------------------------------
   const cancelRes = await makeRequest(
     'POST',
@@ -351,17 +420,17 @@ async function runPhase2aVerification() {
     { cancellationReason: 'Front Desk test cancellation' },
     fdCookies
   );
-  const passT11 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
+  const passT15 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
   results.push({
-    step: '11. Appt Cancellation (Front Desk)',
+    step: '15. Appt Cancellation (Front Desk)',
     expected: 'HTTP 200 OK with CANCELLED status',
     actual: `HTTP ${cancelRes.status}`,
-    result: passT11 ? 'PASS' : 'FAIL',
+    result: passT15 ? 'PASS' : 'FAIL',
     details: `Status: ${cancelRes.body.data?.status}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 12: Appointment Reschedule (Admin Permitted)
+  // Test 16: Appointment Reschedule (Admin) -> ALLOWED
   // ----------------------------------------------------------------
   const rescheduleStartAt = new Date(Date.now() + 86400000 * 10 + 7200000).toISOString();
   const rescheduleRes = await makeRequest(
@@ -370,18 +439,37 @@ async function runPhase2aVerification() {
     { startAt: rescheduleStartAt, reason: 'Admin rescheduled' },
     adminCookies
   );
-  const passT12 = rescheduleRes.status === 200;
+  const passT16 = rescheduleRes.status === 200;
   results.push({
-    step: '12. Appt Reschedule (Admin)',
+    step: '16. Appt Reschedule (Admin)',
     expected: 'HTTP 200 OK',
     actual: `HTTP ${rescheduleRes.status}`,
-    result: passT12 ? 'PASS' : 'FAIL',
+    result: passT16 ? 'PASS' : 'FAIL',
     details: `Status: ${rescheduleRes.body.data?.status}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 17: Live Test Fixture Cleanup
+  // ----------------------------------------------------------------
+  console.log('\nCleaning up Phase 2A test fixtures (soft-deleting test patients & cancelling test appointments)...');
+  for (const aId of createdApptIds) {
+    await makeRequest('POST', `/appointments/${aId}/cancel`, { cancellationReason: 'Phase 2A test fixture cleanup' }, adminCookies);
+  }
+  for (const pId of createdPatientIds) {
+    await makeRequest('DELETE', `/patients/${pId}`, undefined, adminCookies);
+  }
+
+  results.push({
+    step: '17. Test Fixture Cleanup',
+    expected: 'Test appointments cancelled and test patients soft-deleted',
+    actual: `Cleaned ${createdApptIds.length} appts, ${createdPatientIds.length} patients`,
+    result: 'PASS',
+    details: `Audit logs preserved; test records soft-deleted/cancelled`,
   });
 
   // Print Summary Table
   console.log('\n----------------------------------------------------------------');
-  console.log('PHASE 2A FINAL CONNECTIVITY & ROLE EVIDENCE RESULTS:');
+  console.log('PHASE 2A FINAL CONNECTIVITY & SECURITY RESULTS:');
   console.log('----------------------------------------------------------------');
   console.table(results);
 

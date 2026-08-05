@@ -84,8 +84,8 @@ app.use((req, res, next) => {
 });
 
 // ---- Health Check (Unauthenticated) ----
-app.get('/health', (_req, res) => {
-  res.json({
+const healthHandler = (_req: express.Request, res: express.Response) => {
+  res.status(200).json({
     success: true,
     data: {
       status: 'healthy',
@@ -95,7 +95,13 @@ app.get('/health', (_req, res) => {
       environment: env.NODE_ENV,
     },
   });
-});
+};
+
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
+if (env.API_PREFIX !== '/api') {
+  app.get(`${env.API_PREFIX}/health`, healthHandler);
+}
 
 // ---- API Routes ----
 import authRouter from './routes/auth.routes';

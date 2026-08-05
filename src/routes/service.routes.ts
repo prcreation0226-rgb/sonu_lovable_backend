@@ -4,7 +4,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { authenticate } from '../middleware/auth';
-import { requireRoles } from '../middleware/rbac';
+import { requireRoles, STAFF_ROLES } from '../middleware/rbac';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
 import { AuthenticatedRequest } from '../types';
@@ -19,33 +19,43 @@ const ServiceSchema = z.object({
 
 const router = Router();
 
-// Public / Authenticated GET routes for services list
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const services = await prisma.service.findMany({
-      where: { deletedAt: null, isActive: true },
-      orderBy: { name: 'asc' },
-    });
-    res.status(200).json({ success: true, data: services });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const service = await prisma.service.findFirst({
-      where: { id: req.params.id as string, deletedAt: null },
-    });
-    if (!service) {
-      res.status(404).json({ success: false, message: 'Service not found' });
-      return;
+// Internal staff routes for service lookup
+router.get(
+  '/',
+  authenticate,
+  requireRoles(...STAFF_ROLES),
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const services = await prisma.service.findMany({
+        where: { deletedAt: null, isActive: true },
+        orderBy: { name: 'asc' },
+      });
+      res.status(200).json({ success: true, data: services });
+    } catch (error) {
+      next(error);
     }
-    res.status(200).json({ success: true, data: service });
-  } catch (error) {
-    next(error);
   }
-});
+);
+
+router.get(
+  '/:id',
+  authenticate,
+  requireRoles(...STAFF_ROLES),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const service = await prisma.service.findFirst({
+        where: { id: req.params.id as string, deletedAt: null },
+      });
+      if (!service) {
+        res.status(404).json({ success: false, message: 'Service not found' });
+        return;
+      }
+      res.status(200).json({ success: true, data: service });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // Admin-only creation route
 router.post(

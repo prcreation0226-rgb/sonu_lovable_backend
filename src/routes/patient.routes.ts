@@ -36,11 +36,11 @@ router.use(authenticate);
 /**
  * @route   POST /api/v1/patients
  * @desc    Create new Patient Profile
- * @access  All Staff Roles
+ * @access  Admin and Front Desk ONLY
  */
 router.post(
   '/',
-  requireRoles(...STAFF_ROLES),
+  requireRoles('admin', 'front_desk'),
   validate({ body: CreatePatientSchema }),
   auditPhiAccess('patient_profile', 'create'),
   PatientController.createPatient
@@ -73,11 +73,11 @@ router.get(
 /**
  * @route   PATCH /api/v1/patients/:id
  * @desc    Update Patient Profile details
- * @access  All Staff Roles
+ * @access  Admin and Front Desk ONLY
  */
 router.patch(
   '/:id',
-  requireRoles(...STAFF_ROLES),
+  requireRoles('admin', 'front_desk'),
   validate({ body: UpdatePatientSchema }),
   auditPhiAccess('patient_profile', 'update'),
   PatientController.updatePatient
@@ -86,11 +86,11 @@ router.patch(
 /**
  * @route   DELETE /api/v1/patients/:id
  * @desc    Soft-delete Patient Profile (Hard delete blocked)
- * @access  Admin, Privacy Officer
+ * @access  Admin ONLY
  */
 router.delete(
   '/:id',
-  requireRoles('admin', 'privacy_officer'),
+  requireRoles('admin'),
   auditPhiAccess('patient_profile', 'delete'),
   PatientController.softDeletePatient
 );
