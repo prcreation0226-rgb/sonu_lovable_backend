@@ -33,6 +33,13 @@ interface TestResult {
 
 const results: TestResult[] = [];
 
+async function waitForNextTotpStep(): Promise<void> {
+  const currentSecond = Math.floor(Date.now() / 1000) % 30;
+  const waitMs = (30 - currentSecond + 1) * 1000;
+  console.log(`Waiting ${Math.ceil(waitMs / 1000)}s for next TOTP time step...`);
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
 async function makeRequest(
   method: string,
   path: string,
@@ -61,7 +68,7 @@ async function makeRequest(
       method,
       headers: reqHeaders,
       agent: customAgent,
-      timeout: 10000,
+      timeout: 35000,
     };
 
     const req = https.request(options, (res) => {
@@ -111,16 +118,22 @@ async function runMfaVerificationSuite() {
   }
   console.log('Test accounts seeded successfully.\n');
 
-  // Helper to enroll a fresh user cleanly and return cookies + totp secret
+  // Helper to enroll a fresh user cleanly and return cookies + totp secret + userId
   async function setupEnrolledUser(email: string, pass: string) {
     const login = await makeRequest('POST', '/auth/login', { email, password: pass });
-    const start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
+    const userId = login.body.data?.user?.id;
+    let start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
+    if (start.status !== 200) {
+      await makeRequest('POST', '/auth/mfa/cancel', undefined, login.cookies);
+      start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
+    }
     const factorId = start.body.data?.factorId;
     const secret = start.body.data?.secret;
     const code = authenticator.generate(secret);
 
     const verify = await makeRequest('POST', '/auth/mfa/enroll/verify', { factorId, code }, login.cookies);
     return {
+      userId,
       loginCookies: login.cookies,
       secret,
       factorId,
@@ -161,10 +174,6 @@ async function runMfaVerificationSuite() {
   const factorId = startRes.body.data?.factorId;
   const totpSecret = startRes.body.data?.secret;
   const otpauthUrl = startRes.body.data?.otpauthUrl;
-
-  if (!totpSecret) {
-    console.error('startRes status:', startRes.status, 'body:', JSON.stringify(startRes.body));
-  }
 
   const hasNoStoreHeader = startRes.headers['cache-control']?.includes('no-store');
 
@@ -237,12 +246,15 @@ async function runMfaVerificationSuite() {
     notes: `mfaEnabled: true, activeFactors: ${statusRes2.body.data?.activeFactors?.length}`,
   });
 
-  // Setup User NP for login challenge testing
-  const npSetup = await setupEnrolledUser('phase1-np@radiantilyk.com', 'Phase1Test!2026');
+  // Setup MD user for login challenge testing (Test 8-10)
+  const mdSetup = await setupEnrolledUser('phase1-md@radiantilyk.com', 'Phase1Test!2026');
+
+  // Wait for next TOTP step before verifying login challenge
+  await waitForNextTotpStep();
 
   // Test 8: Users who enabled voluntary MFA still complete MFA challenge even when flag is false
   const mfaLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-np@radiantilyk.com',
+    email: 'phase1-md@radiantilyk.com',
     password: 'Phase1Test!2026',
   });
 
@@ -277,7 +289,7 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
-  const validChallengeCode = authenticator.generate(npSetup.secret);
+  const validChallengeCode = authenticator.generate(mdSetup.secret);
   const mfaChallengeRes = await makeRequest(
     'POST',
     '/auth/mfa/challenge/verify',
@@ -299,7 +311,7 @@ async function runMfaVerificationSuite() {
 
   // Test 11: POST /auth/mfa/cancel safely cancels pending challenge & issues NO auth cookies
   const cancelLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-np@radiantilyk.com',
+    email: 'phase1-md@radiantilyk.com',
     password: 'Phase1Test!2026',
   });
   const cancelRes = await makeRequest('POST', '/auth/mfa/cancel', undefined, cancelLogin.cookies);
@@ -364,8 +376,10 @@ async function runMfaVerificationSuite() {
     });
   }
 
-  // Setup RN user for regenerate/disable tests
+  // Setup RN user for regenerate/disable tests (Test 14-15)
   const rnSetup = await setupEnrolledUser('phase1-rn@radiantilyk.com', 'Phase1Test!2026');
+  await waitForNextTotpStep();
+
   const rnLogin = await makeRequest('POST', '/auth/login', {
     email: 'phase1-rn@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -389,6 +403,7 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 15: Disable MFA (requires password + code + revokes all sessions)
+  await waitForNextTotpStep();
   const rnDisableCode = authenticator.generate(rnSetup.secret);
   const disableRes = await makeRequest('POST', '/auth/mfa/disable', {
     password: 'Phase1Test!2026',
@@ -405,6 +420,7 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 16: Admin Reset MFA for target user (requires admin role + recent admin AAL2 + reason)
+  await waitForNextTotpStep();
   const adminLogin2 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-admin@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -419,16 +435,10 @@ async function runMfaVerificationSuite() {
 
   // Enroll PO target user
   const poSetup = await setupEnrolledUser('phase1-po@radiantilyk.com', 'Phase1Test!2026');
-  const targetPoId = poSetup.loginCookies ? (await makeRequest('GET', '/auth/mfa/status', undefined, poSetup.loginCookies)).body.data?.userId : 'target-po';
-
-  const targetUser = await makeRequest('POST', '/auth/login', { email: 'phase1-po@radiantilyk.com', password: 'Phase1Test!2026' });
-  const targetChallengeCode = authenticator.generate(poSetup.secret);
-  const targetVerifyRes = await makeRequest('POST', '/auth/mfa/challenge/verify', { code: targetChallengeCode }, targetUser.cookies);
-  const realTargetId = targetVerifyRes.body.data?.user?.id;
 
   const adminResetRes = await makeRequest(
     'POST',
-    `/admin/users/${realTargetId}/mfa/reset`,
+    `/admin/users/${poSetup.userId}/mfa/reset`,
     { reason: 'Mandatory security audit reset test for admin target user' },
     adminAal2Cookies
   );
@@ -443,12 +453,15 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 17: Concurrent same TOTP/challenge requests allow only one success (Race condition test)
+  const multiSetup = await setupEnrolledUser('phase1-multi@radiantilyk.com', 'Phase1Test!2026');
+  await waitForNextTotpStep();
+
   const raceLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-admin@radiantilyk.com',
+    email: 'phase1-multi@radiantilyk.com',
     password: 'Phase1Test!2026',
   });
 
-  const raceCode = authenticator.generate(totpSecret);
+  const raceCode = authenticator.generate(multiSetup.secret);
 
   const [raceRes1, raceRes2] = await Promise.all([
     makeRequest('POST', '/auth/mfa/challenge/verify', { code: raceCode }, raceLogin.cookies),

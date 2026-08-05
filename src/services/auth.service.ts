@@ -810,9 +810,9 @@ export class AuthService {
     const existingUserIds = existingUsers.map((u) => u.id);
 
     if (existingUserIds.length > 0) {
+      await prisma.mfaRecoveryCode.deleteMany({ where: { userId: { in: existingUserIds } } });
       await prisma.mfaChallenge.deleteMany({ where: { userId: { in: existingUserIds } } });
       await prisma.mfaFactor.deleteMany({ where: { userId: { in: existingUserIds } } });
-      await prisma.mfaRecoveryCode.deleteMany({ where: { userId: { in: existingUserIds } } });
       await prisma.user.updateMany({
         where: { id: { in: existingUserIds } },
         data: {
