@@ -54,10 +54,13 @@ if (require.main === module) {
             });
           };
 
+          // Seed test accounts if needed
+          await makeRequest('POST', '/auth/seed-test-accounts');
+
           // Login as Admin
           const loginRes = await makeRequest('POST', '/auth/login', {
             email: 'phase1-admin@radiantilyk.com',
-            password: 'AdminPassword123!',
+            password: 'Phase1Test!2026',
           });
 
           if (loginRes.status !== 200) {

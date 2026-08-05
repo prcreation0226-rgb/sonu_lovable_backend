@@ -62,10 +62,6 @@ router.get(
  */
 router.get(
   '/',
-<<<<<<< HEAD
-  authenticate,
-=======
->>>>>>> 3086e40538867a28d68c379fd49f14565cb29458
   requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointments
 );
@@ -77,10 +73,6 @@ router.get(
  */
 router.get(
   '/:id',
-<<<<<<< HEAD
-  authenticate,
-=======
->>>>>>> 3086e40538867a28d68c379fd49f14565cb29458
   requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointmentById
 );

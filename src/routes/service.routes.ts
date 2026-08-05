@@ -8,6 +8,7 @@ import { requireRoles, STAFF_ROLES } from '../middleware/rbac';
 import { z } from 'zod';
 import { validate } from '../middleware/validate';
 import { AuthenticatedRequest } from '../types';
+import { importServiceCatalog } from '../services/catalog.service';
 
 const ServiceSchema = z.object({
   name: z.string().min(1, 'Service name required').max(255),
@@ -19,7 +20,7 @@ const ServiceSchema = z.object({
 
 const router = Router();
 
-import { importServiceCatalog } from '../services/catalog.service';
+// ---- Specific Public & Static Routes (MUST BE BEFORE PARAMETERIZED ROUTES) ----
 
 // Public route: Active services for online booking
 router.get('/public', async (_req: Request, res: Response, next: NextFunction) => {
@@ -64,6 +65,21 @@ router.get(
   }
 );
 
+// Admin-only trigger to import service catalog
+router.post(
+  '/import-catalog',
+  authenticate,
+  requireRoles('admin'),
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      await importServiceCatalog();
+      res.status(200).json({ success: true, message: 'Client service catalog imported successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // Internal staff routes for service lookup
 router.get(
   '/',
@@ -77,27 +93,6 @@ router.get(
         orderBy: [{ categoryId: 'asc' }, { name: 'asc' }],
       });
       res.status(200).json({ success: true, data: services });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.get(
-  '/:id',
-  authenticate,
-  requireRoles(...STAFF_ROLES),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const service = await prisma.service.findFirst({
-        where: { id: req.params.id as string, deletedAt: null },
-        include: { category: true },
-      });
-      if (!service) {
-        res.status(404).json({ success: false, message: 'Service not found' });
-        return;
-      }
-      res.status(200).json({ success: true, data: service });
     } catch (error) {
       next(error);
     }
@@ -127,6 +122,29 @@ router.post(
       });
 
       res.status(201).json({ success: true, data: service, message: 'Service created successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ---- Parameterized Routes (/:id) ----
+
+router.get(
+  '/:id',
+  authenticate,
+  requireRoles(...STAFF_ROLES),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const service = await prisma.service.findFirst({
+        where: { id: req.params.id as string, deletedAt: null },
+        include: { category: true },
+      });
+      if (!service) {
+        res.status(404).json({ success: false, message: 'Service not found' });
+        return;
+      }
+      res.status(200).json({ success: true, data: service });
     } catch (error) {
       next(error);
     }
@@ -176,21 +194,6 @@ router.delete(
         data: { deletedAt: new Date(), isActive: false },
       });
       res.status(200).json({ success: true, message: 'Service soft-deleted successfully' });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Admin-only trigger to import service catalog
-router.post(
-  '/import-catalog',
-  authenticate,
-  requireRoles('admin'),
-  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      await importServiceCatalog();
-      res.status(200).json({ success: true, message: 'Client service catalog imported successfully' });
     } catch (error) {
       next(error);
     }
