@@ -102,8 +102,9 @@ async function runFinalArchivalSuite() {
   console.log('  PHASE 1C-B1 — FINAL ARCHIVAL & EVIDENCE VERIFICATION');
   console.log('================================================================\n');
 
-  // Seed test accounts cleanly
-  console.log('1. Seeding test accounts on live Railway database...');
+  // 1. Initial cleanup & fresh seeding
+  console.log('1. Cleaning up and seeding fresh test accounts on live Railway database...');
+  await makeRequest('POST', '/auth/seed-test-accounts', { action: 'cleanup' });
   await makeRequest('POST', '/auth/seed-test-accounts');
 
   // ----------------------------------------------------------------
@@ -111,7 +112,7 @@ async function runFinalArchivalSuite() {
   // ----------------------------------------------------------------
   console.log('2. Executing Evidence 1: Enrollment & Voluntary MFA challenge...');
   
-  // NP user logs in cleanly
+  // Fresh NP user logs in (AAL1 session)
   const npLogin1 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -121,13 +122,13 @@ async function runFinalArchivalSuite() {
   const factorId = startEnroll.body.data?.factorId;
   const secret = startEnroll.body.data?.secret;
 
-  // Complete enrollment via verify using startEnroll.cookies (contains rka_mfa_pending)
+  // Complete enrollment via verify using npLogin1.cookies
   const code = authenticator.generate(secret);
   const verifyEnroll = await makeRequest(
     'POST',
     '/auth/mfa/enroll/verify',
     { factorId, code },
-    startEnroll.cookies
+    npLogin1.cookies
   );
 
   // Subsequent login for enrolled user returns 202 MFA challenge with rka_mfa_pending ONLY
