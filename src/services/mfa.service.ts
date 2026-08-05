@@ -62,6 +62,15 @@ export class MfaService {
         await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX idx_mfa_challenges_token_hash ON mfa_challenges(challenge_token_hash);`);
       }
 
+      // 4b. Make old challenge_token_encrypted column nullable if present
+      const oldEncryptedCol = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mfa_challenges' AND COLUMN_NAME = 'challenge_token_encrypted';
+      `);
+      if (oldEncryptedCol && oldEncryptedCol.length > 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE mfa_challenges MODIFY COLUMN challenge_token_encrypted VARCHAR(500) NULL;`);
+      }
+
       // 5. Check & add scope to mfa_challenges
       const challengeScope = await prisma.$queryRawUnsafe<any[]>(`
         SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
@@ -216,6 +225,7 @@ export class MfaService {
         data: {
           status: 'active',
           verifiedAt: now,
+          lastUsedStep: currentStep,
         },
       });
 
