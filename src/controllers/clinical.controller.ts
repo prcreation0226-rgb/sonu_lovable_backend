@@ -60,8 +60,9 @@ export class ClinicalController {
   static async signOwnNote(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
+      const roles = req.user!.roles || [];
       const ip = (req.clientIp || '0.0.0.0') as string;
-      const signed = await ClinicalService.signSoapNote(req.params.id as string, req.body, userId, ip);
+      const signed = await ClinicalService.signOwnNote(req.params.id as string, req.body, userId, roles, ip);
 
       res.status(200).json({ success: true, data: signed, message: 'Own SOAP note signed / submitted for cosign successfully' });
     } catch (error) { next(error); }
@@ -71,9 +72,19 @@ export class ClinicalController {
     try {
       const userId = req.user!.id;
       const ip = (req.clientIp || '0.0.0.0') as string;
-      const signed = await ClinicalService.signSoapNote(req.params.id as string, req.body, userId, ip);
+      const signed = await ClinicalService.cosignNote(req.params.id as string, req.body, userId, ip);
 
-      res.status(200).json({ success: true, data: signed, message: 'SOAP note cosigned and locked by supervising provider successfully' });
+      res.status(200).json({ success: true, data: signed, message: 'SOAP note cosigned successfully' });
+    } catch (error) { next(error); }
+  }
+
+  static async rejectNote(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const updated = await ClinicalService.rejectNote(req.params.id as string, req.body.reason, userId, ip);
+
+      res.status(200).json({ success: true, data: updated, message: 'SOAP note returned for correction' });
     } catch (error) { next(error); }
   }
 
@@ -81,7 +92,7 @@ export class ClinicalController {
     try {
       const userId = req.user!.id;
       const ip = (req.clientIp || '0.0.0.0') as string;
-      const signed = await ClinicalService.signSoapNote(req.params.id as string, req.body, userId, ip);
+      const signed = await ClinicalService.cosignNote(req.params.id as string, req.body, userId, ip);
 
       res.status(200).json({ success: true, data: signed, message: 'SOAP note signed and locked successfully' });
     } catch (error) { next(error); }
@@ -109,7 +120,8 @@ export class ClinicalController {
   static async getSoapNotes(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const patientId = req.query.patientId as string | undefined;
-      const notes = await ClinicalService.getSoapNotes(patientId);
+      const email = (req.query.email || req.query.clientEmail) as string | undefined;
+      const notes = await ClinicalService.getSoapNotes(patientId, email);
 
       res.status(200).json({ success: true, data: notes });
     } catch (error) { next(error); }
