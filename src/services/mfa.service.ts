@@ -235,15 +235,13 @@ export class MfaService {
         data: { mfaEnabled: true },
       });
 
-      // Insert hashed recovery codes
-      for (const rc of recoveryCodes) {
-        await tx.mfaRecoveryCode.create({
-          data: {
-            userId,
-            codeHash: hashRecoveryCode(rc),
-          },
-        });
-      }
+      // Insert hashed recovery codes in 1 query
+      await tx.mfaRecoveryCode.createMany({
+        data: recoveryCodes.map((rc) => ({
+          userId,
+          codeHash: hashRecoveryCode(rc),
+        })),
+      });
     });
 
     await writeAuditLog({
@@ -500,14 +498,12 @@ export class MfaService {
     });
 
     const newCodes = generateRecoveryCodes(10);
-    for (const code of newCodes) {
-      await prisma.mfaRecoveryCode.create({
-        data: {
-          userId,
-          codeHash: hashRecoveryCode(code),
-        },
-      });
-    }
+    await prisma.mfaRecoveryCode.createMany({
+      data: newCodes.map((code) => ({
+        userId,
+        codeHash: hashRecoveryCode(code),
+      })),
+    });
 
     await writeAuditLog({
       userId,
