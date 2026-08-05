@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { InventoryController } from '../controllers/inventory.controller';
 import { authenticate } from '../middleware/auth';
-import { requireRoles, STAFF_ROLES, CLINICAL_ROLES } from '../middleware/rbac';
+import { requireRoles, CLINICAL_ROLES } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { auditPhiAccess } from '../middleware/audit';
 import {
@@ -16,6 +16,9 @@ import {
 } from '../schemas/inventory.schema';
 
 const router = Router();
+
+// Approved Client Role Alignment: Admin, Front Desk, MD, NP, RN (Privacy Officer and Patients denied)
+const INVENTORY_READ_ROLES = ['admin', 'front_desk', 'medical_director', 'nurse_practitioner', 'rn_injector'] as const;
 
 // All inventory endpoints require authentication
 router.use(authenticate);
@@ -31,13 +34,13 @@ router.post(
 
 router.get(
   '/products',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...INVENTORY_READ_ROLES),
   InventoryController.getProducts
 );
 
 router.get(
   '/products/:id',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...INVENTORY_READ_ROLES),
   InventoryController.getProductById
 );
 
@@ -58,26 +61,26 @@ router.delete(
 
 router.post(
   '/lots',
-  requireRoles(...CLINICAL_ROLES),
+  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'rn_injector'),
   validate({ body: CreateInventoryLotSchema }),
   InventoryController.createLot
 );
 
 router.get(
   '/lots',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...INVENTORY_READ_ROLES),
   InventoryController.getLots
 );
 
 router.get(
   '/lots/expiring',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...INVENTORY_READ_ROLES),
   InventoryController.getExpiringLots
 );
 
 router.get(
   '/lots/:id',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...INVENTORY_READ_ROLES),
   InventoryController.getLotById
 );
 
@@ -95,7 +98,7 @@ router.post(
 
 router.post(
   '/movements',
-  requireRoles('admin', 'medical_director'),
+  requireRoles('admin'),
   validate({ body: CreateInventoryMovementSchema }),
   InventoryController.createMovement
 );
