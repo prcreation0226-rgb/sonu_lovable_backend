@@ -20,20 +20,34 @@ const ServiceSchema = z.object({
 
 const router = Router();
 
-// ---- Specific Public & Static Routes (MUST BE BEFORE PARAMETERIZED ROUTES) ----
-
-// Public route: Active services for online booking
+// Public route: Active services for online booking (Public-safe fields only)
 router.get('/public', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const categories = await prisma.serviceCategory.findMany({
       where: { isActive: true },
-      orderBy: { displayOrder: 'asc' },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        displayOrder: true,
         services: {
           where: { deletedAt: null, isActive: true },
+          select: {
+            id: true,
+            categoryId: true,
+            name: true,
+            slug: true,
+            description: true,
+            durationMinutes: true,
+            priceCents: true,
+            priceNote: true,
+            promoGroup: true,
+            isActive: true,
+          },
           orderBy: { name: 'asc' },
         },
       },
+      orderBy: { displayOrder: 'asc' },
     });
     res.status(200).json({ success: true, data: categories });
   } catch (error) {
@@ -59,21 +73,6 @@ router.get(
         },
       });
       res.status(200).json({ success: true, data: categories });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Admin-only trigger to import service catalog
-router.post(
-  '/import-catalog',
-  authenticate,
-  requireRoles('admin'),
-  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    try {
-      await importServiceCatalog();
-      res.status(200).json({ success: true, message: 'Client service catalog imported successfully' });
     } catch (error) {
       next(error);
     }
