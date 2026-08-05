@@ -175,6 +175,10 @@ async function runMfaVerificationSuite() {
   const totpSecret = startRes.body.data?.secret;
   const otpauthUrl = startRes.body.data?.otpauthUrl;
 
+  if (!totpSecret) {
+    console.error('Test 3 startRes status:', startRes.status, 'body:', JSON.stringify(startRes.body));
+  }
+
   const hasNoStoreHeader = startRes.headers['cache-control']?.includes('no-store');
 
   results.push({
