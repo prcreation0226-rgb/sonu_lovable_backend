@@ -33,6 +33,12 @@ interface TestResult {
 
 const results: TestResult[] = [];
 
+async function waitForNextTotpStep(): Promise<void> {
+  const currentSecond = Math.floor(Date.now() / 1000) % 30;
+  const waitMs = (30 - currentSecond + 1) * 1000;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
 async function makeRequest(
   method: string,
   path: string,
@@ -143,24 +149,37 @@ async function runFinalArchivalSuite() {
   const hasRefreshCookie = npLogin2.cookies.some((c) => c.includes('rka_refresh'));
   const mfaRequired = npLogin2.body.data?.mfaRequired === true;
 
-  const hasAal2Cookies = verifyEnroll.cookies.some((c) => c.includes('rka_access'));
+  // Complete MFA login challenge to issue AAL2 session cookies
+  await waitForNextTotpStep();
+  const challengeCode = authenticator.generate(secret);
+  const verifyChallengeRes = await makeRequest(
+    'POST',
+    '/auth/mfa/challenge/verify',
+    { code: challengeCode },
+    npLogin2.cookies
+  );
+
+  const aal2Cookies = verifyChallengeRes.cookies;
+  const hasAal2Cookies = aal2Cookies.some((c) => c.includes('rka_access'));
+
   const passE1 =
     verifyEnroll.status === 200 &&
-    hasAal2Cookies &&
-    verifyEnroll.body.data?.aal === 'aal2' &&
     npLogin2.status === 202 &&
     mfaRequired &&
     hasMfaPendingCookie &&
     !hasAccessCookie &&
-    !hasRefreshCookie;
+    !hasRefreshCookie &&
+    verifyChallengeRes.status === 200 &&
+    verifyChallengeRes.body.data?.aal === 'aal2' &&
+    hasAal2Cookies;
 
   results.push({
     evidenceNum: 1,
     name: 'First-time required-role pending enrollment',
-    expectedStatus: 'HTTP 200 (AAL2 Enrollment) -> HTTP 202 (MFA Challenge)',
-    actualStatus: `Enroll: ${verifyEnroll.status}, Challenge Login: ${npLogin2.status}`,
+    expectedStatus: 'HTTP 200 (Enroll) -> HTTP 202 (Challenge Login) -> HTTP 200 (AAL2 Session)',
+    actualStatus: `Enroll: ${verifyEnroll.status}, Challenge Login: ${npLogin2.status}, Challenge Verify: ${verifyChallengeRes.status}`,
     result: passE1 ? 'PASS' : 'FAIL',
-    evidenceDetails: `mfaRequired=${mfaRequired}, rka_mfa_pending issued ONLY, AAL2 session created after verify: ${hasAal2Cookies}`,
+    evidenceDetails: `mfaRequired=${mfaRequired}, rka_mfa_pending issued ONLY, AAL2 session created after challenge verify: ${hasAal2Cookies}`,
   });
 
   // ----------------------------------------------------------------
@@ -198,8 +217,6 @@ async function runFinalArchivalSuite() {
   // ----------------------------------------------------------------
   console.log('4. Executing Evidence 3: requireMfa allowing AAL2 session...');
   
-  const aal2Cookies = verifyEnroll.cookies;
-
   // Access MFA-protected route with valid AAL2 session
   const aal2AllowRes = await makeRequest(
     'POST',
