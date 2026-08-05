@@ -283,12 +283,26 @@ export class BillingService {
       }),
     ]);
 
-    // If payment was linked to an invoice, revert invoice status
+    // If payment was linked to an invoice, recalculate net paid and update invoice status
     if (payment.invoiceId) {
-      await prisma.invoice.update({
-        where: { id: payment.invoiceId },
-        data: { status: 'unpaid' },
-      });
+      const inv = await prisma.invoice.findUnique({ where: { id: payment.invoiceId } });
+      if (inv) {
+        const totalPaid = await prisma.payment.aggregate({
+          where: { invoiceId: inv.id, status: { in: ['completed', 'partial_refund', 'refunded'] } },
+          _sum: { amountCents: true },
+        });
+        const totalRefundedAgg = await prisma.refund.aggregate({
+          where: { payment: { invoiceId: inv.id } },
+          _sum: { amountCents: true },
+        });
+        const netPaid = (totalPaid._sum.amountCents || 0) - (totalRefundedAgg._sum.amountCents || 0);
+        const newStatus = netPaid >= inv.totalCents ? 'paid' : netPaid > 0 ? 'partial' : 'unpaid';
+
+        await prisma.invoice.update({
+          where: { id: inv.id },
+          data: { status: newStatus },
+        });
+      }
     }
 
     await writeAuditLog({
