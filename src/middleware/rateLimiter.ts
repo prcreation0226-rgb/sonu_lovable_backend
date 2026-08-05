@@ -81,7 +81,7 @@ export const globalLimiter = rateLimit({
  */
 export const mfaLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 15,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
