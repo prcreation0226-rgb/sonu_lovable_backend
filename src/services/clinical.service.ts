@@ -107,9 +107,20 @@ export class ClinicalService {
 
   // ==========================================
   // ---- SOAP NOTES & IMMUTABILITY GUARD ----
+  private static async getStaffProfile(userId: string) {
+    const staff = await prisma.staffProfile.findFirst({ where: { userId, deletedAt: null } });
+    if (!staff) {
+      throw AppError.forbidden('Staff profile required for clinical charting actions');
+    }
+    return staff;
+  }
+
+  // ==========================================
+  // 3. SOAP NOTES & CLINICAL CHARTING
   // ==========================================
 
   static async createSoapNote(input: CreateSoapNoteInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const encounter = await prisma.encounter.findFirst({ where: { id: input.encounterId, deletedAt: null } });
     if (!encounter) throw AppError.notFound('Encounter');
 
@@ -119,7 +130,7 @@ export class ClinicalService {
       data: {
         encounterId: input.encounterId,
         patientId: input.patientId,
-        authorId: userId,
+        authorId: staff.id,
         subjective: input.subjective,
         objective: input.objective,
         assessment: input.assessment,
@@ -128,7 +139,6 @@ export class ClinicalService {
         cosignedBy: input.cosignerId || undefined,
         signedAt: status === 'signed' ? new Date() : undefined,
         lockedAt: status === 'signed' ? new Date() : undefined,
-        // Store initial version 1
         versions: {
           create: {
             versionNumber: 1,
@@ -146,12 +156,11 @@ export class ClinicalService {
       },
     });
 
-    // If status is pending_cosign, add to CosignQueue
     if (status === 'pending_cosign') {
       await prisma.cosignQueue.create({
         data: {
           noteId: note.id,
-          authorId: userId,
+          authorId: staff.id,
           assignedToId: input.cosignerId || undefined,
           status: 'pending',
         },
@@ -172,9 +181,10 @@ export class ClinicalService {
   }
 
   /**
-   * Update Draft SOAP Note (IMMUTABILITY GUARD: Rejects if SIGNED or LOCKED).
+   * Update Draft SOAP Note (IMMUTABILITY & OWNERSHIP GUARD).
    */
   static async updateSoapNote(noteId: string, input: UpdateSoapNoteInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const note = await prisma.soapNote.findFirst({
       where: { id: noteId, deletedAt: null },
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
@@ -182,10 +192,15 @@ export class ClinicalService {
 
     if (!note) throw AppError.notFound('SOAP Note');
 
-    // IMMUTABILITY GUARD: Signed/Locked notes CANNOT be edited
-    if (note.status === 'signed' || note.status === 'locked') {
+    // OWNERSHIP GUARD: Only the original author can edit their own draft note
+    if (note.authorId !== staff.id) {
+      throw AppError.forbidden('You can only edit your own draft notes');
+    }
+
+    // IMMUTABILITY GUARD: Signed, cosigned, or locked notes CANNOT be edited
+    if (note.status !== 'draft') {
       throw AppError.badRequest(
-        `SOAP note #${noteId} is '${note.status}' and cannot be edited. Use the Addendum API (/soap-notes/${noteId}/addendum) to append amendments.`
+        `SOAP note #${noteId} is in '${note.status}' status and cannot be edited. Use the Addendum API (/soap-notes/${noteId}/addendum) to append amendments.`
       );
     }
 
@@ -219,7 +234,6 @@ export class ClinicalService {
       },
     });
 
-    // If transitioned to pending_cosign, update or create CosignQueue entry
     if (newStatus === 'pending_cosign') {
       await prisma.cosignQueue.upsert({
         where: { noteId },
@@ -242,30 +256,95 @@ export class ClinicalService {
   }
 
   /**
-   * Cosign & Sign / Lock SOAP Note (MD / NP Review Workflow).
+   * Author Sign Own Note / Submit for Cosign.
    */
-  static async signSoapNote(noteId: string, input: SignSoapNoteInput, userId: string, ipAddress: string) {
+  static async signOwnNote(noteId: string, input: SignSoapNoteInput, userId: string, userRoles: string[], ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
     if (!note) throw AppError.notFound('SOAP Note');
 
-    if (note.status === 'locked') {
-      throw AppError.badRequest('SOAP Note is already signed and locked');
+    if (note.authorId !== staff.id) {
+      throw AppError.forbidden('You can only sign your own notes');
     }
 
-    const finalStatus = input.lockNote ? 'locked' : 'signed';
+    if (note.status !== 'draft') {
+      throw AppError.badRequest(`SOAP note #${noteId} is in '${note.status}' status and cannot be signed as draft`);
+    }
+
+    const isSupervising = userRoles.includes('medical_director') || userRoles.includes('nurse_practitioner');
+    const newStatus = isSupervising ? (input.lockNote ? 'locked' : 'signed') : 'pending_cosign';
+    const now = new Date();
+
+    const updated = await prisma.soapNote.update({
+      where: { id: noteId },
+      data: {
+        status: newStatus,
+        signedAt: now,
+        cosignedBy: isSupervising ? staff.id : undefined,
+        cosignedAt: isSupervising ? now : undefined,
+        lockedAt: isSupervising && input.lockNote ? now : undefined,
+        signatures: {
+          create: {
+            signerId: staff.id,
+            signatureType: isSupervising ? 'digital_cosign' : 'author_signature',
+            ipAddress,
+            signedAt: now,
+          },
+        },
+      },
+      include: {
+        author: { select: { id: true, fullName: true, title: true } },
+        cosigner: { select: { id: true, fullName: true, title: true } },
+        signatures: true,
+      },
+    });
+
+    if (!isSupervising) {
+      await prisma.cosignQueue.upsert({
+        where: { noteId },
+        update: { status: 'pending', assignedToId: input.cosignerId || undefined },
+        create: { noteId, authorId: note.authorId, assignedToId: input.cosignerId || undefined, status: 'pending' },
+      });
+    }
+
+    await writeAuditLog({
+      userId,
+      patientId: note.patientId,
+      action: isSupervising ? 'SOAP_NOTE_SIGNED' : 'SOAP_NOTE_SUBMITTED_FOR_COSIGN',
+      resourceType: 'soap_note',
+      resourceId: noteId,
+      ipAddress,
+      newValue: { status: newStatus, signedAt: now },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Cosign SOAP Note (Supervising Provider Review Workflow).
+   */
+  static async cosignNote(noteId: string, input: SignSoapNoteInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
+    const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
+    if (!note) throw AppError.notFound('SOAP Note');
+
+    if (note.status !== 'pending_cosign') {
+      throw AppError.badRequest(`SOAP note #${noteId} is in '${note.status}' status and cannot be cosigned. Note must be in 'pending_cosign' status.`);
+    }
+
+    const finalStatus = input.lockNote ? 'locked' : 'cosigned';
     const now = new Date();
 
     const signed = await prisma.soapNote.update({
       where: { id: noteId },
       data: {
         status: finalStatus,
-        cosignedBy: userId,
+        cosignedBy: staff.id,
         cosignedAt: now,
-        signedAt: now,
         lockedAt: input.lockNote ? now : undefined,
         signatures: {
           create: {
-            signerId: userId,
+            signerId: staff.id,
             signatureType: 'digital_cosign',
             ipAddress,
             signedAt: now,
@@ -279,7 +358,6 @@ export class ClinicalService {
       },
     });
 
-    // Resolve CosignQueue item if present
     await prisma.cosignQueue.updateMany({
       where: { noteId },
       data: { status: 'resolved', resolvedAt: now },
@@ -288,32 +366,84 @@ export class ClinicalService {
     await writeAuditLog({
       userId,
       patientId: note.patientId,
-      action: 'SOAP_NOTE_COSIGNED_AND_LOCKED',
+      action: 'SOAP_NOTE_COSIGNED',
       resourceType: 'soap_note',
       resourceId: noteId,
       ipAddress,
-      newValue: { status: finalStatus, signedAt: now },
+      newValue: { status: finalStatus, cosignedAt: now },
     });
 
     return signed;
   }
 
   /**
-   * Append Addendum to Signed/Locked SOAP Note (Original note text is NEVER touched).
+   * Reject / Return SOAP Note for Correction.
    */
-  static async addAddendum(noteId: string, input: AddendumInput, userId: string, ipAddress: string) {
+  static async rejectNote(noteId: string, reason: string, userId: string, ipAddress: string) {
     const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
     if (!note) throw AppError.notFound('SOAP Note');
 
-    if (note.status !== 'signed' && note.status !== 'locked') {
-      throw AppError.badRequest('Addendums can only be appended to signed or locked SOAP notes');
+    if (note.status !== 'pending_cosign') {
+      throw AppError.badRequest(`SOAP note #${noteId} is in '${note.status}' status and cannot be returned for correction.`);
+    }
+
+    const updated = await prisma.soapNote.update({
+      where: { id: noteId },
+      data: {
+        status: 'draft',
+        additionalData: {
+          ...(typeof note.additionalData === 'object' && note.additionalData !== null ? note.additionalData : {}),
+          lastReturnedReason: reason,
+          lastReturnedAt: new Date().toISOString(),
+        },
+      },
+      include: {
+        author: { select: { id: true, fullName: true, title: true } },
+      },
+    });
+
+    await prisma.cosignQueue.updateMany({
+      where: { noteId },
+      data: { status: 'rejected' },
+    });
+
+    await writeAuditLog({
+      userId,
+      patientId: note.patientId,
+      action: 'SOAP_NOTE_RETURNED_FOR_CORRECTION',
+      resourceType: 'soap_note',
+      resourceId: noteId,
+      ipAddress,
+      newValue: { status: 'draft', reason },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Sign & Lock SOAP Note (Generic compatibility path).
+   */
+  static async signSoapNote(noteId: string, input: SignSoapNoteInput, userId: string, ipAddress: string) {
+    return this.cosignNote(noteId, input, userId, ipAddress);
+  }
+
+  /**
+   * Append Addendum to Signed/Locked SOAP Note (Original note text is NEVER touched).
+   */
+  static async addAddendum(noteId: string, input: AddendumInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
+    const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
+    if (!note) throw AppError.notFound('SOAP Note');
+
+    if (note.status !== 'signed' && note.status !== 'cosigned' && note.status !== 'locked') {
+      throw AppError.badRequest(`SOAP note #${noteId} is in '${note.status}' status. Addendums can only be appended to signed or locked notes.`);
     }
 
     const addendum = await prisma.noteAddendum.create({
       data: {
         noteId,
         patientId: note.patientId,
-        authorId: userId,
+        authorId: staff.id,
         requestedBy: 'patient',
         reason: input.reason,
         addendumText: input.addendumText,
@@ -342,7 +472,10 @@ export class ClinicalService {
     };
 
     if (cosignerId) {
-      where.assignedToId = cosignerId;
+      where.OR = [
+        { assignedToId: cosignerId },
+        { assignedToId: null },
+      ];
     }
 
     return prisma.cosignQueue.findMany({
@@ -350,7 +483,17 @@ export class ClinicalService {
       orderBy: { requestedAt: 'asc' },
       include: {
         note: {
-          select: { id: true, subjective: true, objective: true, assessment: true, plan: true, createdAt: true },
+          select: {
+            id: true,
+            subjective: true,
+            objective: true,
+            assessment: true,
+            plan: true,
+            status: true,
+            createdAt: true,
+            signedAt: true,
+            patient: { select: { id: true, firstName: true, lastName: true, email: true } },
+          },
         },
         author: { select: { id: true, fullName: true, title: true } },
       },
@@ -360,14 +503,23 @@ export class ClinicalService {
   /**
    * Get List of SOAP Notes (Patient / Chart query).
    */
-  static async getSoapNotes(patientId?: string) {
+  static async getSoapNotes(patientId?: string, clientEmail?: string) {
     const where: any = { deletedAt: null };
     if (patientId) where.patientId = patientId;
+    if (clientEmail) {
+      where.patient = { email: { equals: clientEmail.toLowerCase() } };
+    }
 
     return prisma.soapNote.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 100,
+      include: {
+        author: { select: { id: true, fullName: true, title: true } },
+        cosigner: { select: { id: true, fullName: true, title: true } },
+        patient: { select: { id: true, firstName: true, lastName: true, email: true } },
+        encounter: { select: { id: true, encounterType: true, encounterDate: true } },
+      },
     });
   }
 }

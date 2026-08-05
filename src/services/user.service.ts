@@ -81,7 +81,7 @@ export class UserService {
     };
 
     if (search) {
-      where.email = { contains: search, mode: 'insensitive' };
+      where.email = { contains: search };
     }
 
     const [total, users] = await Promise.all([

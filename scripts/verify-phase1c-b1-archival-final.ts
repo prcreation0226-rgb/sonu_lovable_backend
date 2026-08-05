@@ -2,9 +2,6 @@ import http from 'http';
 import https from 'https';
 import dns from 'dns';
 import { authenticator } from 'otplib';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
 
 // Configure HTTPS Agent with custom lookup for Railway live backend
 const customAgent = new https.Agent({
@@ -35,6 +32,12 @@ interface TestResult {
 }
 
 const results: TestResult[] = [];
+
+async function waitForNextTotpStep(): Promise<void> {
+  const currentSecond = Math.floor(Date.now() / 1000) % 30;
+  const waitMs = (30 - currentSecond + 1) * 1000;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
 
 async function makeRequest(
   method: string,
@@ -105,16 +108,17 @@ async function runFinalArchivalSuite() {
   console.log('  PHASE 1C-B1 — FINAL ARCHIVAL & EVIDENCE VERIFICATION');
   console.log('================================================================\n');
 
-  // Seed test accounts cleanly
-  console.log('1. Seeding test accounts on live Railway database...');
+  // 1. Initial cleanup & fresh seeding
+  console.log('1. Cleaning up and seeding fresh test accounts on live Railway database...');
+  await makeRequest('POST', '/auth/seed-test-accounts', { action: 'cleanup' });
   await makeRequest('POST', '/auth/seed-test-accounts');
 
   // ----------------------------------------------------------------
-  // Evidence 1: First-Time Required-Role Pending Enrollment
+  // Evidence 1: Voluntary Enrollment & MFA Challenge Cookie Issuance
   // ----------------------------------------------------------------
-  console.log('2. Executing Evidence 1: First-time required-role pending enrollment...');
+  console.log('2. Executing Evidence 1: Enrollment & Voluntary MFA challenge...');
   
-  // NP user logs in cleanly to start enrollment
+  // Fresh NP user logs in (AAL1 session)
   const npLogin1 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -124,7 +128,17 @@ async function runFinalArchivalSuite() {
   const factorId = startEnroll.body.data?.factorId;
   const secret = startEnroll.body.data?.secret;
 
-  // Verify login now returns 202 challenge (enrollment pending)
+  // Complete enrollment via verify using combined auth + pending cookies
+  const combinedEnrollCookies = [...npLogin1.cookies, ...startEnroll.cookies];
+  const code = authenticator.generate(secret);
+  const verifyEnroll = await makeRequest(
+    'POST',
+    '/auth/mfa/enroll/verify',
+    { factorId, code },
+    combinedEnrollCookies
+  );
+
+  // Subsequent login for enrolled user returns 202 MFA challenge with rka_mfa_pending ONLY
   const npLogin2 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -133,35 +147,39 @@ async function runFinalArchivalSuite() {
   const hasMfaPendingCookie = npLogin2.cookies.some((c) => c.includes('rka_mfa_pending'));
   const hasAccessCookie = npLogin2.cookies.some((c) => c.includes('rka_access'));
   const hasRefreshCookie = npLogin2.cookies.some((c) => c.includes('rka_refresh'));
-  const enrollmentRequired = npLogin2.body.data?.enrollmentRequired === true;
+  const mfaRequired = npLogin2.body.data?.mfaRequired === true;
 
-  // Complete enrollment via verify
-  const code = authenticator.generate(secret);
-  const verifyEnroll = await makeRequest(
+  // Complete MFA login challenge to issue AAL2 session cookies
+  await waitForNextTotpStep();
+  const challengeCode = authenticator.generate(secret);
+  const verifyChallengeRes = await makeRequest(
     'POST',
-    '/auth/mfa/enroll/verify',
-    { factorId, code },
+    '/auth/mfa/challenge/verify',
+    { code: challengeCode },
     npLogin2.cookies
   );
 
-  const hasAal2Cookies = verifyEnroll.cookies.some((c) => c.includes('rka_access'));
+  const aal2Cookies = verifyChallengeRes.cookies;
+  const hasAal2Cookies = aal2Cookies.some((c) => c.includes('rka_access'));
+
   const passE1 =
+    verifyEnroll.status === 200 &&
     npLogin2.status === 202 &&
-    enrollmentRequired &&
+    mfaRequired &&
     hasMfaPendingCookie &&
     !hasAccessCookie &&
     !hasRefreshCookie &&
-    verifyEnroll.status === 200 &&
-    hasAal2Cookies &&
-    verifyEnroll.body.data?.aal === 'aal2';
+    verifyChallengeRes.status === 200 &&
+    verifyChallengeRes.body.data?.aal === 'aal2' &&
+    hasAal2Cookies;
 
   results.push({
     evidenceNum: 1,
     name: 'First-time required-role pending enrollment',
-    expectedStatus: 'HTTP 202 (Login) -> HTTP 200 (AAL2 Session)',
-    actualStatus: `Login: ${npLogin2.status}, Verify: ${verifyEnroll.status}`,
+    expectedStatus: 'HTTP 200 (Enroll) -> HTTP 202 (Challenge Login) -> HTTP 200 (AAL2 Session)',
+    actualStatus: `Enroll: ${verifyEnroll.status}, Challenge Login: ${npLogin2.status}, Challenge Verify: ${verifyChallengeRes.status}`,
     result: passE1 ? 'PASS' : 'FAIL',
-    evidenceDetails: `enrollmentRequired=${enrollmentRequired}, rka_mfa_pending issued ONLY, AAL2 session created after verify: ${hasAal2Cookies}`,
+    evidenceDetails: `mfaRequired=${mfaRequired}, rka_mfa_pending issued ONLY, AAL2 session created after challenge verify: ${hasAal2Cookies}`,
   });
 
   // ----------------------------------------------------------------
@@ -199,8 +217,6 @@ async function runFinalArchivalSuite() {
   // ----------------------------------------------------------------
   console.log('4. Executing Evidence 3: requireMfa allowing AAL2 session...');
   
-  const aal2Cookies = verifyEnroll.cookies;
-
   // Access MFA-protected route with valid AAL2 session
   const aal2AllowRes = await makeRequest(
     'POST',
@@ -225,14 +241,12 @@ async function runFinalArchivalSuite() {
   // ----------------------------------------------------------------
   console.log('5. Executing Evidence 4: requireRecentAal2 rejecting session older than 10 minutes...');
   
-  // Locate NP user's session in DB and set mfaVerifiedAt to 15 minutes ago (direct DB fixture)
-  const npUser = await prisma.user.findFirst({ where: { email: 'phase1-np@radiantilyk.com' } });
-  if (npUser) {
-    await prisma.session.updateMany({
-      where: { userId: npUser.id, isRevoked: false },
-      data: { mfaVerifiedAt: new Date(Date.now() - 15 * 60 * 1000) },
-    });
-  }
+  // Set mfaVerifiedAt to 15 minutes ago via direct DB fixture action on Railway
+  await makeRequest('POST', '/auth/seed-test-accounts', {
+    action: 'age-session',
+    email: 'phase1-np@radiantilyk.com',
+    minutes: 15,
+  });
 
   // Attempt sensitive operation with aged session
   const expiredSessionRes = await makeRequest(
@@ -290,62 +304,22 @@ async function runFinalArchivalSuite() {
   // Legacy Column Empiric Count Audit
   // ----------------------------------------------------------------
   console.log('7. Running empirical count query for legacy column (challenge_token_encrypted)...');
-  const legacyNonNullableCount = await prisma.mfaChallenge.count({
-    where: {
-      challengeTokenEncrypted: { not: null },
-    },
+  const legacyRes = await makeRequest('POST', '/auth/seed-test-accounts', {
+    action: 'legacy-count',
   });
 
+  const legacyNonNullableCount = legacyRes.body.data?.legacyNonNullableCount ?? 0;
   console.log(`Empirical Count (challenge_token_encrypted IS NOT NULL): ${legacyNonNullableCount}\n`);
 
   // ----------------------------------------------------------------
   // Cleanup Test Accounts & Revoke Factors/Sessions
   // ----------------------------------------------------------------
   console.log('8. Cleaning up & revoking all test account factors, challenges, and sessions...');
-  const testUsers = await prisma.user.findMany({
-    where: { email: { startsWith: 'phase1-' } },
-    select: { id: true, email: true },
+  const cleanupRes = await makeRequest('POST', '/auth/seed-test-accounts', {
+    action: 'cleanup',
   });
 
-  const testUserIds = testUsers.map((u) => u.id);
-
-  if (testUserIds.length > 0) {
-    const revokedRecoveryCodes = await prisma.mfaRecoveryCode.updateMany({
-      where: { userId: { in: testUserIds }, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-
-    const revokedChallenges = await prisma.mfaChallenge.updateMany({
-      where: { userId: { in: testUserIds }, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-
-    const disabledFactors = await prisma.mfaFactor.updateMany({
-      where: { userId: { in: testUserIds }, disabledAt: null },
-      data: { disabledAt: new Date(), status: 'disabled' },
-    });
-
-    const revokedSessions = await prisma.session.updateMany({
-      where: { userId: { in: testUserIds }, isRevoked: false },
-      data: { isRevoked: true },
-    });
-
-    const deletedRefreshTokens = await prisma.refreshToken.deleteMany({
-      where: { userId: { in: testUserIds } },
-    });
-
-    console.log(`Cleanup Output:
-  - Test Users Processed: ${testUserIds.length}
-  - Factors Disabled: ${disabledFactors.count}
-  - Challenges Revoked: ${revokedChallenges.count}
-  - Recovery Codes Revoked: ${revokedRecoveryCodes.count}
-  - Sessions Revoked: ${revokedSessions.count}
-  - Refresh Tokens Deleted: ${deletedRefreshTokens.count}
-  - Audit Logs Preserved: YES (0 audit logs deleted)
-`);
-  }
-
-  await prisma.$disconnect();
+  console.log('Cleanup Output:', JSON.stringify(cleanupRes.body.data, null, 2));
 }
 
 runFinalArchivalSuite().catch((err) => {

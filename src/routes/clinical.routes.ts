@@ -18,6 +18,7 @@ import {
   CreateSoapNoteSchema,
   UpdateSoapNoteSchema,
   SignSoapNoteSchema,
+  RejectSoapNoteSchema,
   AddendumSchema,
 } from '../schemas/clinical.schema';
 
@@ -153,6 +154,19 @@ router.post(
   validate({ body: SignSoapNoteSchema }),
   auditPhiAccess('soap_note', 'update'),
   ClinicalController.cosignNote
+);
+
+/**
+ * @route   POST /api/v1/clinical/soap-notes/:id/reject
+ * @desc    Reject / return SOAP note to author for correction
+ * @access  Medical Director, Nurse Practitioner
+ */
+router.post(
+  '/soap-notes/:id/reject',
+  requireRoles('medical_director', 'nurse_practitioner'),
+  validate({ body: RejectSoapNoteSchema }),
+  auditPhiAccess('soap_note', 'update'),
+  ClinicalController.rejectNote
 );
 
 /**

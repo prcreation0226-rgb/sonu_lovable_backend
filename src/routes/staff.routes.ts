@@ -59,7 +59,7 @@ router.get(
 router.post(
   '/create-with-user',
   authenticate,
-  requireRoles('admin'),
+  requireRoles(...STAFF_ROLES),
   StaffController.createStaffWithUser
 );
 

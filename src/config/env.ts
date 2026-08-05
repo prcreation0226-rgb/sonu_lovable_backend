@@ -26,12 +26,21 @@ function optionalIntEnv(key: string, fallback: number): number {
   return parsed;
 }
 
+const isCloudHosted = !!(
+  process.env.RAILWAY_PROJECT_ID ||
+  process.env.RAILWAY_ENVIRONMENT_NAME ||
+  process.env.RAILWAY_STATIC_URL ||
+  process.env.RAILWAY_PUBLIC_DOMAIN ||
+  (process.env.PORT && process.env.PORT !== '5000')
+);
+const resolvedNodeEnv = process.env.NODE_ENV === 'production' || isCloudHosted ? 'production' : optionalEnv('NODE_ENV', 'development');
+
 export const env = {
   // Server
-  NODE_ENV: optionalEnv('NODE_ENV', 'development'),
+  NODE_ENV: resolvedNodeEnv,
   PORT: optionalIntEnv('PORT', 5000),
   API_PREFIX: optionalEnv('API_PREFIX', '/api/v1'),
-  IS_PRODUCTION: optionalEnv('NODE_ENV', 'development') === 'production',
+  IS_PRODUCTION: resolvedNodeEnv === 'production',
 
   // Database
   DATABASE_URL: requireEnv('DATABASE_URL'),

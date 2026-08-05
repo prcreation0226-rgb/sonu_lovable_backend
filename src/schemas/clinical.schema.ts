@@ -42,6 +42,10 @@ export const SignSoapNoteSchema = z.object({
   lockNote: z.boolean().default(true),
 });
 
+export const RejectSoapNoteSchema = z.object({
+  reason: z.string().trim().min(3, 'Rejection reason is required').max(1000),
+});
+
 export const AddendumSchema = z.object({
   reason: z.string().trim().min(5, 'Reason for addendum is required').max(500),
   addendumText: z.string().trim().min(10, 'Addendum text must be at least 10 characters').max(5000),

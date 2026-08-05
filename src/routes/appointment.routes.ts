@@ -1,9 +1,10 @@
 // Radiantilyk EMR — Appointment & Scheduling Routes
 // Express router for Appointment CRUD, status workflow transitions, online booking, time off, and waitlists.
 //
-// RBAC Rules:
-// 1. GET /api/v1/appointments — Read-only schedule access for Admin, Front Desk, NP, RN, and Medical Director (clinical oversight).
-// 2. POST /api/v1/appointments (and status/reschedule/cancel) — Restricted to SCHEDULING_ROLES (admin, front_desk, nurse_practitioner, rn_injector). Medical Director denied scheduling write operations.
+// RBAC Rules (Requirement 4):
+// 1. GET /api/v1/appointments (and details/pending-count) — Read-only schedule access for Admin, Front Desk, NP, RN, and Medical Director.
+// 2. Appointment writes (POST, status, reschedule, cancel) — Restricted strictly to Admin and Front Desk ONLY.
+//    NP, RN, and Medical Director write attempts are rejected with 403 Forbidden.
 
 import { Router } from 'express';
 import { AppointmentController } from '../controllers/appointment.controller';
@@ -38,15 +39,19 @@ router.post(
   AppointmentController.createPublicBookingRequest
 );
 
-// ---- Read-Only Schedule Routes ----
+// All internal appointment routes require authentication
+router.use(authenticate);
+
+// ---- Read-Only Schedule Routes (Admin, Front Desk, NP, RN, Medical Director) ----
 
 /**
  * @route   GET /api/v1/appointments/pending-count
  * @desc    Get count of pending appointments
- * @access  Internal Staff
+ * @access  Internal Staff (Admin, Front Desk, NP, RN, Medical Director)
  */
 router.get(
   '/pending-count',
+  requireRoles(...STAFF_ROLES),
   AppointmentController.getPendingCount
 );
 
@@ -57,7 +62,10 @@ router.get(
  */
 router.get(
   '/',
+<<<<<<< HEAD
   authenticate,
+=======
+>>>>>>> 3086e40538867a28d68c379fd49f14565cb29458
   requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointments
 );
@@ -69,18 +77,20 @@ router.get(
  */
 router.get(
   '/:id',
+<<<<<<< HEAD
   authenticate,
+=======
+>>>>>>> 3086e40538867a28d68c379fd49f14565cb29458
   requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointmentById
 );
 
-// ---- Protected Write Routes (Requires JWT Authentication + Live Role Check) ----
-router.use(authenticate);
+// ---- Protected Write Routes (Admin and Front Desk ONLY) ----
 
 /**
  * @route   POST /api/v1/appointments
  * @desc    Create new Appointment
- * @access  Scheduling Roles (Admin, Front Desk, NP, RN) — Medical Director denied write access
+ * @access  Admin & Front Desk ONLY (NP, RN, MD denied write access)
  */
 router.post(
   '/',
@@ -92,7 +102,7 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/:id/status
  * @desc    Transition Appointment Status (State Machine Enforcement)
- * @access  Scheduling Roles (Admin, Front Desk, NP, RN) — Medical Director denied status transitions
+ * @access  Admin & Front Desk ONLY (NP, RN, MD denied write access)
  */
 router.post(
   '/:id/status',
@@ -104,7 +114,7 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/:id/reschedule
  * @desc    Reschedule Appointment
- * @access  Scheduling Roles
+ * @access  Admin & Front Desk ONLY (NP, RN, MD denied write access)
  */
 router.post(
   '/:id/reschedule',
@@ -116,7 +126,7 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/:id/cancel
  * @desc    Cancel Appointment with reason
- * @access  Scheduling Roles
+ * @access  Admin & Front Desk ONLY (NP, RN, MD denied write access)
  */
 router.post(
   '/:id/cancel',
@@ -128,11 +138,11 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/staff/:staffId/time-off
  * @desc    Request Staff Time Off
- * @access  Admin, NP, RN, Front Desk
+ * @access  Admin & Front Desk ONLY
  */
 router.post(
   '/staff/:staffId/time-off',
-  requireRoles('admin', 'nurse_practitioner', 'rn_injector', 'front_desk'),
+  requireRoles(...SCHEDULING_ROLES),
   validate({ body: StaffTimeOffSchema }),
   AppointmentController.createStaffTimeOff
 );
@@ -140,7 +150,7 @@ router.post(
 /**
  * @route   POST /api/v1/appointments/waitlist
  * @desc    Add Patient to Waitlist
- * @access  Scheduling Roles
+ * @access  Admin & Front Desk ONLY
  */
 router.post(
   '/waitlist',
