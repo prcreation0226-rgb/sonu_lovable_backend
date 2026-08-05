@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import { AppointmentController } from '../controllers/appointment.controller';
 import { authenticate } from '../middleware/auth';
-import { requireRoles, SCHEDULING_ROLES } from '../middleware/rbac';
+import { requireRoles, SCHEDULING_ROLES, STAFF_ROLES } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { authLimiter } from '../middleware/rateLimiter';
 import {
@@ -53,20 +53,24 @@ router.get(
 /**
  * @route   GET /api/v1/appointments
  * @desc    List / Calendar View appointments with location, staff, date range filters
- * @access  Internal Staff & Medical Director (Read-only oversight)
+ * @access  All internal staff & Medical Director (Read-only oversight)
  */
 router.get(
   '/',
+  authenticate,
+  requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointments
 );
 
 /**
  * @route   GET /api/v1/appointments/:id
  * @desc    Get detailed Appointment by ID
- * @access  Internal Staff & Medical Director (Read-only oversight)
+ * @access  All internal staff & Medical Director (Read-only oversight)
  */
 router.get(
   '/:id',
+  authenticate,
+  requireRoles(...STAFF_ROLES),
   AppointmentController.getAppointmentById
 );
 

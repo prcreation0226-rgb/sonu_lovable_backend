@@ -7,7 +7,7 @@
 // 3. validate (Zod schema input guard)
 // 4. auditPhiAccess (HIPAA ePHI Audit Logging)
 
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { ClinicalController } from '../controllers/clinical.controller';
 import { authenticate } from '../middleware/auth';
 import { requireRoles, CLINICAL_ROLES } from '../middleware/rbac';
@@ -23,7 +23,31 @@ import {
 
 const router = Router();
 
-// All clinical endpoints require authentication
+/**
+ * @route   GET /api/v1/clinical/tox-guardrails
+ * @desc    Get neurotoxin dosage safety guardrails by product name (Public/Reference endpoint)
+ * @access  Public / Clinical Reference
+ */
+router.get('/tox-guardrails', (req: Request, res: Response): void => {
+  const product = (req.query.product as string) || 'Botox';
+  const isDysport = product.toLowerCase().includes('dysport');
+
+  const mult = isDysport ? 2.5 : 1;
+  const guardrails = [
+    { product, zone: 'Glabella (Frown Lines)', min_units: Math.round(12 * mult), typical_units: Math.round(20 * mult), max_units: Math.round(30 * mult) },
+    { product, zone: 'Forehead (Frontalis)', min_units: Math.round(6 * mult), typical_units: Math.round(12 * mult), max_units: Math.round(20 * mult) },
+    { product, zone: "Crow's Feet (Orbicularis Oculi)", min_units: Math.round(8 * mult), typical_units: Math.round(16 * mult), max_units: Math.round(24 * mult) },
+    { product, zone: 'Bunny Lines (Nasalis)', min_units: Math.round(2 * mult), typical_units: Math.round(4 * mult), max_units: Math.round(6 * mult) },
+    { product, zone: 'Masseters / TMJ', min_units: Math.round(20 * mult), typical_units: Math.round(40 * mult), max_units: Math.round(60 * mult) },
+    { product, zone: 'Lip Flip / Perioral', min_units: Math.round(2 * mult), typical_units: Math.round(4 * mult), max_units: Math.round(6 * mult) },
+    { product, zone: 'Gummy Smile', min_units: Math.round(2 * mult), typical_units: Math.round(4 * mult), max_units: Math.round(6 * mult) },
+    { product, zone: 'Platysmal Bands (Nefertiti)', min_units: Math.round(20 * mult), typical_units: Math.round(30 * mult), max_units: Math.round(50 * mult) },
+  ];
+
+  res.json({ success: true, data: guardrails });
+});
+
+// All subsequent clinical endpoints require authentication
 router.use(authenticate);
 
 // ---- Encounters ----
