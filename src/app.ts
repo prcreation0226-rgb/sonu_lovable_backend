@@ -112,6 +112,10 @@ import billingRouter from './routes/billing.routes';
 import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 import availabilityRouter from './routes/availability.routes';
+import { MfaService } from './services/mfa.service';
+
+// Reconcile MFA Schema additions safely on startup
+MfaService.reconcileMfaSchema();
 
 
 const apiRouters: [string, any][] = [

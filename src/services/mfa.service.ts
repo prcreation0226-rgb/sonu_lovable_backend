@@ -20,6 +20,82 @@ authenticator.options = {
 
 export class MfaService {
   /**
+   * Safely reconcile live MySQL schema with Prisma MFA additions.
+   * Runs idempotently on server startup.
+   */
+  static async reconcileMfaSchema(): Promise<void> {
+    try {
+      // 1. Check & add mfa_verified_at to sessions
+      const sessionMfaVerified = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sessions' AND COLUMN_NAME = 'mfa_verified_at';
+      `);
+      if (!sessionMfaVerified || sessionMfaVerified.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE sessions ADD COLUMN mfa_verified_at DATETIME(3) NULL;`);
+      }
+
+      // 2. Check & add is_revoked to sessions
+      const sessionIsRevoked = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sessions' AND COLUMN_NAME = 'is_revoked';
+      `);
+      if (!sessionIsRevoked || sessionIsRevoked.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE sessions ADD COLUMN is_revoked TINYINT(1) NOT NULL DEFAULT 0;`);
+      }
+
+      // 3. Check & add disabled_at to mfa_factors
+      const factorDisabledAt = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mfa_factors' AND COLUMN_NAME = 'disabled_at';
+      `);
+      if (!factorDisabledAt || factorDisabledAt.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE mfa_factors ADD COLUMN disabled_at DATETIME(3) NULL;`);
+      }
+
+      // 4. Check & add challenge_token_hash to mfa_challenges
+      const challengeTokenHash = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mfa_challenges' AND COLUMN_NAME = 'challenge_token_hash';
+      `);
+      if (!challengeTokenHash || challengeTokenHash.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE mfa_challenges ADD COLUMN challenge_token_hash VARCHAR(500) NULL;`);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX idx_mfa_challenges_token_hash ON mfa_challenges(challenge_token_hash);`);
+      }
+
+      // 5. Check & add scope to mfa_challenges
+      const challengeScope = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mfa_challenges' AND COLUMN_NAME = 'scope';
+      `);
+      if (!challengeScope || challengeScope.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE mfa_challenges ADD COLUMN scope VARCHAR(30) NOT NULL DEFAULT 'MFA_LOGIN';`);
+      }
+
+      // 6. Check & add revoked_at to mfa_challenges
+      const challengeRevokedAt = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mfa_challenges' AND COLUMN_NAME = 'revoked_at';
+      `);
+      if (!challengeRevokedAt || challengeRevokedAt.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE mfa_challenges ADD COLUMN revoked_at DATETIME(3) NULL;`);
+      }
+
+      // 7. Check & add revoked_at to mfa_recovery_codes
+      const recoveryRevokedAt = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mfa_recovery_codes' AND COLUMN_NAME = 'revoked_at';
+      `);
+      if (!recoveryRevokedAt || recoveryRevokedAt.length === 0) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE mfa_recovery_codes ADD COLUMN revoked_at DATETIME(3) NULL;`);
+      }
+
+      console.log('[MFA SCHEMA RECONCILE] Live MySQL schema reconciled successfully with Prisma additions.');
+    } catch (error) {
+      console.warn('[MFA SCHEMA RECONCILE] Non-fatal schema reconciliation note:', error);
+    }
+  }
+
+  /**
    * Get MFA enrollment and factor status for user
    */
   static async getMfaStatus(userId: string) {
