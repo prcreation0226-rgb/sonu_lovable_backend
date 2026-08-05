@@ -67,6 +67,6 @@ router.post('/disable', authenticate, requireRecentAal2, MfaController.disableMf
  * @desc    Admin reset MFA for target user
  * @access  Authenticated Admin + Recent AAL2
  */
-router.post('/admin/users/:userId/mfa/reset', authenticate, requireRoles('admin'), requireRecentAal2, MfaController.adminResetMfa);
+router.post('/users/:userId/mfa/reset', authenticate, requireRoles('admin'), requireRecentAal2, MfaController.adminResetMfa);
 
 export default router;

@@ -1,14 +1,25 @@
 import http from 'http';
 import https from 'https';
+import dns from 'dns';
 import { authenticator } from 'otplib';
 
-// Configure HTTPS Agent for direct IP connection to Railway live backend
-const agent = new https.Agent({
+// Configure HTTPS Agent with custom lookup for Railway live backend
+const customAgent = new https.Agent({
   rejectUnauthorized: false,
+  lookup: (hostname, options, callback) => {
+    const cb = typeof options === 'function' ? options : callback;
+    const opts = typeof options === 'object' ? options : {};
+    if (hostname.includes('railway.app')) {
+      if (opts.all) {
+        return cb(null, [{ address: '69.46.46.14', family: 4 }]);
+      }
+      return cb(null, '69.46.46.14', 4);
+    }
+    return dns.lookup(hostname, options, cb);
+  },
 });
 
-const API_BASE = 'https://69.46.46.14/api/v1';
-const HOST_HEADER = 'sonulovablebackend-production.up.railway.app';
+const API_BASE = 'https://sonulovablebackend-production.up.railway.app/api/v1';
 
 interface TestResult {
   num: number;
@@ -33,7 +44,6 @@ async function makeRequest(
     const payload = body ? JSON.stringify(body) : '';
 
     const reqHeaders: Record<string, string> = {
-      Host: HOST_HEADER,
       'Content-Type': 'application/json',
       'User-Agent': 'Phase1C-B1-MFA-Verification-Suite/1.0',
       ...customHeaders,
@@ -44,13 +54,12 @@ async function makeRequest(
     }
 
     const options: https.RequestOptions = {
-      hostname: '69.46.46.14',
+      hostname: url.hostname,
       port: 443,
       path: `${url.pathname}${url.search}`,
       method,
       headers: reqHeaders,
-      agent,
-      servername: HOST_HEADER,
+      agent: customAgent,
     };
 
     const req = https.request(options, (res) => {
@@ -393,9 +402,11 @@ async function runMfaVerificationSuite() {
     password: 'Phase1Test!2026',
   });
 
+  const npUserId = npLogin1.body.data?.user?.id;
+
   const adminResetRes = await makeRequest(
     'POST',
-    '/admin/users/4da0afa7-93ba-482a-b4b9-fa631c014c5c/mfa/reset',
+    `/admin/users/${npUserId}/mfa/reset`,
     { reason: 'Mandatory security audit reset test for admin target user' },
     adminLogin2.cookies
   );
