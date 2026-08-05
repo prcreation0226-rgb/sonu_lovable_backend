@@ -1,6 +1,6 @@
-import http from 'http';
 import https from 'https';
 import dns from 'dns';
+import { prisma } from '../src/config/database';
 
 // Configure HTTPS Agent with custom lookup for Railway live backend
 const customAgent = new https.Agent({
@@ -43,7 +43,7 @@ async function makeRequest(
 
     const reqHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
-      'User-Agent': 'Phase2A-Verification-Suite/1.0',
+      'User-Agent': 'Phase2A-Verification-Suite/2.0',
     };
 
     if (cookies && cookies.length > 0) {
@@ -92,112 +92,129 @@ async function makeRequest(
   });
 }
 
+async function ensureReferenceFixtures() {
+  console.log('Seeding reference fixtures (Location & Service) directly via script...');
+
+  let testLocation = await prisma.location.findFirst({ where: { name: 'RKA San Jose Main', deletedAt: null } });
+  if (!testLocation) {
+    testLocation = await prisma.location.create({
+      data: {
+        name: 'RKA San Jose Main',
+        address: '100 N First St',
+        city: 'San Jose',
+        state: 'CA',
+        zipCode: '95113',
+        phone: '(408) 555-0100',
+        timezone: 'America/Los_Angeles',
+      },
+    });
+  }
+
+  let testService = await prisma.service.findFirst({ where: { name: 'Phase2A Test Consultation', deletedAt: null } });
+  if (!testService) {
+    testService = await prisma.service.create({
+      data: {
+        name: 'Phase2A Test Consultation',
+        slug: 'phase2a-test-consultation',
+        description: 'Aesthetic consultation for Phase 2A verification',
+        durationMinutes: 30,
+        priceCents: 15000,
+        isActive: true,
+      },
+    });
+  }
+
+  return { locationId: testLocation.id, serviceId: testService.id };
+}
+
 async function runPhase2aVerification() {
   console.log('================================================================');
-  console.log('  PHASE 2A — PATIENT & APPOINTMENT LIVE CONNECTIVITY VERIFICATION');
+  console.log('  PHASE 2A — PATIENT & APPOINTMENT CONNECTIVITY & ROLE EVIDENCE');
   console.log('================================================================\n');
 
-  // Seed test staff accounts + reference data (location, service)
-  const seedRes = await makeRequest('POST', '/auth/seed-test-accounts');
-  const seededLocationId = seedRes.body.data?.locationId;
-  const seededServiceId = seedRes.body.data?.serviceId;
-  console.log(`   Seeded reference data: locationId=${seededLocationId}, serviceId=${seededServiceId}`);
+  // 0. Reference Fixture Setup (Script-owned, isolated from production auth)
+  const { locationId, serviceId } = await ensureReferenceFixtures();
+  console.log(`Reference fixtures ready: locationId=${locationId}, serviceId=${serviceId}\n`);
 
-  // 1. Admin Login (Permitted for both Patient & Appointment Writes)
-  console.log('1. Logging in as Admin...');
-  const adminLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-admin@radiantilyk.com',
-    password: 'Phase1Test!2026',
-  });
+  // Seed test staff accounts
+  await makeRequest('POST', '/auth/seed-test-accounts');
+
+  // Login all roles
+  console.log('Logging in test accounts for RBAC verification...');
+
+  const adminLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-admin@radiantilyk.com', password: 'Phase1Test!2026' });
   const adminCookies = adminLogin.cookies;
 
-  // 2. Nurse Practitioner Login (Permitted for Reads, BLOCKED for Appointment Writes)
-  console.log('2. Logging in as Nurse Practitioner...');
-  const npLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-np@radiantilyk.com',
-    password: 'Phase1Test!2026',
-  });
+  const fdLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-fd@radiantilyk.com', password: 'Phase1Test!2026' });
+  const fdCookies = fdLogin.cookies;
+
+  const npLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-np@radiantilyk.com', password: 'Phase1Test!2026' });
   const npCookies = npLogin.cookies;
+
+  const rnLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-rn@radiantilyk.com', password: 'Phase1Test!2026' });
+  const rnCookies = rnLogin.cookies;
+
+  const mdLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-md@radiantilyk.com', password: 'Phase1Test!2026' });
+  const mdCookies = mdLogin.cookies;
+
+  const patientLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-patient@radiantilyk.com', password: 'Phase1Test!2026' });
+  const patientCookies = patientLogin.cookies;
 
   // ----------------------------------------------------------------
   // Test 1: Patient Creation in Live MySQL
   // ----------------------------------------------------------------
-  console.log('3. Test 1: Creating a test patient profile in live MySQL...');
   const testEmail = `phase2a-patient-${Date.now()}@example.com`;
   const createPatientRes = await makeRequest(
     'POST',
     '/patients',
-    {
-      firstName: 'Phase2A',
-      lastName: 'TestPatient',
-      email: testEmail,
-      phone: '(408) 555-9988',
-      dateOfBirth: '1992-08-15',
-    },
+    { firstName: 'Phase2A', lastName: 'TestPatient', email: testEmail, phone: '(408) 555-9988', dateOfBirth: '1992-08-15' },
     adminCookies
   );
-
   const patientId = createPatientRes.body.data?.id;
   const passT1 = createPatientRes.status === 201 && !!patientId;
   results.push({
-    step: '1. Patient Creation',
-    expected: 'HTTP 201 Created with live patient ID',
+    step: '1. Patient Creation (Admin)',
+    expected: 'HTTP 201 Created',
     actual: `HTTP ${createPatientRes.status}`,
     result: passT1 ? 'PASS' : 'FAIL',
     details: `Patient ID: ${patientId || 'NONE'}, Email: ${testEmail}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 2: Patient Search & Filter Returns Live Data
+  // Test 2: Patient Search & Filter
   // ----------------------------------------------------------------
-  console.log('4. Test 2: Searching patients in live MySQL...');
   const searchRes = await makeRequest('GET', `/patients?search=${encodeURIComponent('TestPatient')}`, undefined, adminCookies);
   const foundPatients = searchRes.body.data || [];
   const passT2 = searchRes.status === 200 && foundPatients.some((p: any) => p.email === testEmail);
   results.push({
-    step: '2. Patient Live Search',
-    expected: 'HTTP 200 with matching live MySQL patient profile',
+    step: '2. Patient Live Search (Admin)',
+    expected: 'HTTP 200 with patient in results',
     actual: `HTTP ${searchRes.status}, count: ${foundPatients.length}`,
     result: passT2 ? 'PASS' : 'FAIL',
-    details: `Found test patient in live search results: ${passT2}`,
+    details: `Patient found: ${passT2}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 3: Patient Profile Update Persists
+  // Test 3: Patient Profile Update
   // ----------------------------------------------------------------
-  console.log('5. Test 3: Updating patient details in live MySQL...');
-  const updatePatientRes = await makeRequest(
-    'PATCH',
-    `/patients/${patientId}`,
-    { phone: '(408) 555-7777' },
-    adminCookies
-  );
+  const updatePatientRes = await makeRequest('PATCH', `/patients/${patientId}`, { phone: '(408) 555-7777' }, adminCookies);
   const passT3 = updatePatientRes.status === 200 && updatePatientRes.body.data?.phone === '(408) 555-7777';
   results.push({
-    step: '3. Patient Detail Update',
-    expected: 'HTTP 200 with updated phone number in live MySQL',
+    step: '3. Patient Detail Update (Admin)',
+    expected: 'HTTP 200 with updated phone',
     actual: `HTTP ${updatePatientRes.status}`,
     result: passT3 ? 'PASS' : 'FAIL',
-    details: `Updated phone: ${updatePatientRes.body.data?.phone}`,
+    details: `Phone: ${updatePatientRes.body.data?.phone}`,
   });
 
-  // ----------------------------------------------------------------
-  // Test 4: Appointment Creation (Admin Permitted)
-  // ----------------------------------------------------------------
-  console.log('6. Test 4: Creating an appointment as Admin...');
-  
-  // Use seeded reference data
+  // Fetch staffId
   const staffRes = await makeRequest('GET', '/staff', undefined, adminCookies);
   const staffId = staffRes.body.data?.[0]?.id || staffRes.body[0]?.id;
-  const locationId = seededLocationId;
-  const serviceId = seededServiceId;
 
-  console.log(`   Resolved: staffId=${staffId}, locationId=${locationId}, serviceId=${serviceId}`);
-
-  const startAt = new Date(Date.now() + 86400000).toISOString(); // Tomorrow
-  const endAt = new Date(Date.now() + 86400000 + 3600000).toISOString();
-
-  const createApptRes = await makeRequest(
+  // ----------------------------------------------------------------
+  // Test 4: Front Desk Appointment Creation -> ALLOWED
+  // ----------------------------------------------------------------
+  const fdApptRes = await makeRequest(
     'POST',
     '/appointments',
     {
@@ -205,32 +222,26 @@ async function runPhase2aVerification() {
       staffId,
       locationId,
       serviceIds: [serviceId],
-      startAt,
-      endAt,
-      notes: 'Phase 2A Verification Visit',
+      startAt: new Date(Date.now() + 86400000).toISOString(),
+      endAt: new Date(Date.now() + 86400000 + 3600000).toISOString(),
+      notes: 'Front Desk Booking',
     },
-    adminCookies
+    fdCookies
   );
-
-  if (createApptRes.status !== 201) {
-    console.log(`   Appointment creation error: ${JSON.stringify(createApptRes.body)}`);
-  }
-
-  const apptId = createApptRes.body.data?.id;
-  const passT4 = createApptRes.status === 201 && !!apptId;
+  const fdApptId = fdApptRes.body.data?.id;
+  const passT4 = fdApptRes.status === 201 && !!fdApptId;
   results.push({
-    step: '4. Appointment Creation (Admin)',
-    expected: 'HTTP 201 Created with live appointment ID',
-    actual: `HTTP ${createApptRes.status}`,
+    step: '4. Front Desk Appt Creation',
+    expected: 'HTTP 201 Created',
+    actual: `HTTP ${fdApptRes.status}`,
     result: passT4 ? 'PASS' : 'FAIL',
-    details: `Appointment ID: ${apptId || 'NONE'}`,
+    details: `Appointment ID: ${fdApptId || 'NONE'}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 5: NP Appointment Write Attempt BLOCKED (HTTP 403)
+  // Test 5: Admin Appointment Creation -> ALLOWED
   // ----------------------------------------------------------------
-  console.log('7. Test 5: Attempting appointment creation as Nurse Practitioner (RBAC Check)...');
-  const npCreateApptRes = await makeRequest(
+  const adminApptRes = await makeRequest(
     'POST',
     '/appointments',
     {
@@ -240,85 +251,158 @@ async function runPhase2aVerification() {
       serviceIds: [serviceId],
       startAt: new Date(Date.now() + 172800000).toISOString(),
       endAt: new Date(Date.now() + 172800000 + 3600000).toISOString(),
+      notes: 'Admin Booking',
+    },
+    adminCookies
+  );
+  const adminApptId = adminApptRes.body.data?.id;
+  const passT5 = adminApptRes.status === 201 && !!adminApptId;
+  results.push({
+    step: '5. Admin Appt Creation',
+    expected: 'HTTP 201 Created',
+    actual: `HTTP ${adminApptRes.status}`,
+    result: passT5 ? 'PASS' : 'FAIL',
+    details: `Appointment ID: ${adminApptId || 'NONE'}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 6: RN Appointment Write -> BLOCKED (HTTP 403)
+  // ----------------------------------------------------------------
+  const rnWriteRes = await makeRequest(
+    'POST',
+    '/appointments',
+    {
+      patientId,
+      staffId,
+      locationId,
+      serviceIds: [serviceId],
+      startAt: new Date(Date.now() + 259200000).toISOString(),
+    },
+    rnCookies
+  );
+  const passT6 = rnWriteRes.status === 403;
+  results.push({
+    step: '6. RN Appt Write Blocked',
+    expected: 'HTTP 403 Forbidden',
+    actual: `HTTP ${rnWriteRes.status}`,
+    result: passT6 ? 'PASS' : 'FAIL',
+    details: `Message: ${rnWriteRes.body.error?.message || rnWriteRes.body.message}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 7: Medical Director Appointment Write -> BLOCKED (HTTP 403)
+  // ----------------------------------------------------------------
+  const mdWriteRes = await makeRequest(
+    'POST',
+    '/appointments',
+    {
+      patientId,
+      staffId,
+      locationId,
+      serviceIds: [serviceId],
+      startAt: new Date(Date.now() + 259200000).toISOString(),
+    },
+    mdCookies
+  );
+  const passT7 = mdWriteRes.status === 403;
+  results.push({
+    step: '7. Medical Director Appt Write Blocked',
+    expected: 'HTTP 403 Forbidden',
+    actual: `HTTP ${mdWriteRes.status}`,
+    result: passT7 ? 'PASS' : 'FAIL',
+    details: `Message: ${mdWriteRes.body.error?.message || mdWriteRes.body.message}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 8: NP Appointment Write -> BLOCKED (HTTP 403)
+  // ----------------------------------------------------------------
+  const npWriteRes = await makeRequest(
+    'POST',
+    '/appointments',
+    {
+      patientId,
+      staffId,
+      locationId,
+      serviceIds: [serviceId],
+      startAt: new Date(Date.now() + 259200000).toISOString(),
     },
     npCookies
   );
-
-  const passT5 = npCreateApptRes.status === 403;
+  const passT8 = npWriteRes.status === 403;
   results.push({
-    step: '5. NP Appointment Write Blocked',
+    step: '8. NP Appt Write Blocked',
     expected: 'HTTP 403 Forbidden',
-    actual: `HTTP ${npCreateApptRes.status}`,
-    result: passT5 ? 'PASS' : 'FAIL',
-    details: `NP appointment write blocked correctly. Message: ${npCreateApptRes.body.error?.message || npCreateApptRes.body.message}`,
+    actual: `HTTP ${npWriteRes.status}`,
+    result: passT8 ? 'PASS' : 'FAIL',
+    details: `Message: ${npWriteRes.body.error?.message || npWriteRes.body.message}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 6: NP Appointment Read ALLOWED (HTTP 200)
+  // Test 9: NP Appointment Read -> ALLOWED (HTTP 200)
   // ----------------------------------------------------------------
-  console.log('8. Test 6: Reading appointments schedule as Nurse Practitioner (RBAC Check)...');
-  const npReadApptRes = await makeRequest('GET', '/appointments', undefined, npCookies);
-  const passT6 = npReadApptRes.status === 200 && Array.isArray(npReadApptRes.body.data);
+  const npReadRes = await makeRequest('GET', '/appointments', undefined, npCookies);
+  const passT9 = npReadRes.status === 200 && Array.isArray(npReadRes.body.data);
   results.push({
-    step: '6. NP Appointment Read Allowed',
+    step: '9. NP Appt Read Allowed',
     expected: 'HTTP 200 OK',
-    actual: `HTTP ${npReadApptRes.status}`,
-    result: passT6 ? 'PASS' : 'FAIL',
-    details: `NP read-only schedule access permitted. Count: ${npReadApptRes.body.data?.length}`,
+    actual: `HTTP ${npReadRes.status}`,
+    result: passT9 ? 'PASS' : 'FAIL',
+    details: `Schedule read count: ${npReadRes.body.data?.length}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 7: Appointment Cancellation (Admin Permitted) — Run BEFORE reschedule
+  // Test 10: Patient Cannot Access Other Patient Records (HTTP 403)
   // ----------------------------------------------------------------
-  console.log('9. Test 7: Cancelling appointment...');
+  const patientAccessRes = await makeRequest('GET', `/patients/${patientId}`, undefined, patientCookies);
+  const passT10 = patientAccessRes.status === 403;
+  results.push({
+    step: '10. Patient Access to EMR Chart Blocked',
+    expected: 'HTTP 403 Forbidden',
+    actual: `HTTP ${patientAccessRes.status}`,
+    result: passT10 ? 'PASS' : 'FAIL',
+    details: `Patient blocked from viewing EMR chart: ${passT10}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 11: Appointment Cancellation (Front Desk Permitted)
+  // ----------------------------------------------------------------
   const cancelRes = await makeRequest(
     'POST',
-    `/appointments/${apptId}/cancel`,
-    { cancellationReason: 'Phase 2A test cleanup' },
-    adminCookies
+    `/appointments/${fdApptId}/cancel`,
+    { cancellationReason: 'Front Desk test cancellation' },
+    fdCookies
   );
-  const passT7 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
+  const passT11 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
   results.push({
-    step: '7. Appointment Cancellation',
+    step: '11. Appt Cancellation (Front Desk)',
     expected: 'HTTP 200 OK with CANCELLED status',
     actual: `HTTP ${cancelRes.status}`,
-    result: passT7 ? 'PASS' : 'FAIL',
-    details: `Cancelled status: ${cancelRes.body.data?.status}`,
+    result: passT11 ? 'PASS' : 'FAIL',
+    details: `Status: ${cancelRes.body.data?.status}`,
   });
 
   // ----------------------------------------------------------------
-  // Test 8: Appointment Reschedule — create a second appointment to reschedule
+  // Test 12: Appointment Reschedule (Admin Permitted)
   // ----------------------------------------------------------------
-  console.log('10. Test 8: Rescheduling a new appointment...');
-  const startAt2 = new Date(Date.now() + 172800000).toISOString(); // Day after tomorrow
-  const endAt2 = new Date(Date.now() + 172800000 + 3600000).toISOString();
-  const createAppt2Res = await makeRequest(
-    'POST',
-    '/appointments',
-    { patientId, staffId, locationId, serviceIds: [serviceId], startAt: startAt2, endAt: endAt2 },
-    adminCookies
-  );
-  const appt2Id = createAppt2Res.body.data?.id;
-
   const rescheduleStartAt = new Date(Date.now() + 172800000 + 7200000).toISOString();
   const rescheduleRes = await makeRequest(
     'POST',
-    `/appointments/${appt2Id}/reschedule`,
-    { startAt: rescheduleStartAt, reason: 'Patient requested time change' },
+    `/appointments/${adminApptId}/reschedule`,
+    { startAt: rescheduleStartAt, reason: 'Admin rescheduled' },
     adminCookies
   );
-  const passT8 = rescheduleRes.status === 200;
+  const passT12 = rescheduleRes.status === 200;
   results.push({
-    step: '8. Appointment Reschedule',
+    step: '12. Appt Reschedule (Admin)',
     expected: 'HTTP 200 OK',
     actual: `HTTP ${rescheduleRes.status}`,
-    result: passT8 ? 'PASS' : 'FAIL',
-    details: `Rescheduled status: ${rescheduleRes.body.data?.status}`,
+    result: passT12 ? 'PASS' : 'FAIL',
+    details: `Status: ${rescheduleRes.body.data?.status}`,
   });
 
   // Print Summary Table
   console.log('\n----------------------------------------------------------------');
-  console.log('PHASE 2A LIVE CONNECTIVITY VERIFICATION RESULTS:');
+  console.log('PHASE 2A FINAL CONNECTIVITY & ROLE EVIDENCE RESULTS:');
   console.log('----------------------------------------------------------------');
   console.table(results);
 

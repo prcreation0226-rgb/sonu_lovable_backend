@@ -951,36 +951,6 @@ export class AuthService {
       results.push({ email: acc.email, userId: user.id, roles: acc.roles, isActive: acc.isActive, isDeleted: !!acc.deletedAt });
     }
 
-    // Seed reference data (Location + Service) for appointment tests
-    let testLocation = await prisma.location.findFirst({ where: { name: 'RKA San Jose Main', deletedAt: null } });
-    if (!testLocation) {
-      testLocation = await prisma.location.create({
-        data: {
-          name: 'RKA San Jose Main',
-          address: '100 N First St',
-          city: 'San Jose',
-          state: 'CA',
-          zipCode: '95113',
-          phone: '(408) 555-0100',
-          timezone: 'America/Los_Angeles',
-        },
-      });
-    }
-
-    let testService = await prisma.service.findFirst({ where: { name: 'Phase2A Test Consultation', deletedAt: null } });
-    if (!testService) {
-      testService = await prisma.service.create({
-        data: {
-          name: 'Phase2A Test Consultation',
-          slug: 'phase2a-test-consultation',
-          description: 'Aesthetic consultation for Phase 2A verification',
-          durationMinutes: 30,
-          priceCents: 15000,
-          isActive: true,
-        },
-      });
-    }
-
-    return { accounts: results, locationId: testLocation.id, serviceId: testService.id };
+    return results;
   }
 }
