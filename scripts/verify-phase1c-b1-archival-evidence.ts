@@ -33,6 +33,12 @@ interface TestResult {
 
 const results: TestResult[] = [];
 
+async function waitForNextTotpStep(): Promise<void> {
+  const currentSecond = Math.floor(Date.now() / 1000) % 30;
+  const waitMs = (30 - currentSecond + 1) * 1000;
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+}
+
 async function makeRequest(
   method: string,
   path: string,
@@ -61,7 +67,7 @@ async function makeRequest(
       method,
       headers: reqHeaders,
       agent: customAgent,
-      timeout: 10000,
+      timeout: 15000,
     };
 
     const req = https.request(options, (res) => {
@@ -102,15 +108,38 @@ async function runEvidenceAudit() {
   console.log('  PHASE 1C-B1 — ARCHIVAL EVIDENCE CONFIRMATION SUITE');
   console.log('================================================================\n');
 
-  // Seed test accounts
+  // Seed test accounts cleanly
+  console.log('Seeding test accounts on live Railway database...');
   await makeRequest('POST', '/auth/seed-test-accounts');
+
+  // Helper to safely enroll a user
+  async function setupEnrolledUser(email: string, pass: string) {
+    const login = await makeRequest('POST', '/auth/login', { email, password: pass });
+    let start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
+    if (start.status !== 200) {
+      await makeRequest('POST', '/auth/mfa/cancel', undefined, login.cookies);
+      start = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, login.cookies);
+    }
+    const factorId = start.body.data?.factorId;
+    const secret = start.body.data?.secret;
+    const code = authenticator.generate(secret);
+
+    const verify = await makeRequest('POST', '/auth/mfa/enroll/verify', { factorId, code }, login.cookies);
+    return {
+      loginCookies: login.cookies,
+      aal2Cookies: verify.cookies,
+      secret,
+      factorId,
+      recoveryCodes: verify.body.data?.recoveryCodes || [],
+    };
+  }
 
   // ----------------------------------------------------------------
   // Evidence 1: First-Time Required-Role Pending Enrollment
   // ----------------------------------------------------------------
   console.log('Executing Evidence 1: First-time required-role pending enrollment...');
   
-  // Login with X-Test-MFA-Enforcement header in isolated test context for unenrolled NP user
+  // Login required-role user (NP) with test enforcement header
   const npLogin = await makeRequest(
     'POST',
     '/auth/login',
@@ -162,7 +191,7 @@ async function runEvidenceAudit() {
   // ----------------------------------------------------------------
   console.log('Executing Evidence 2: requireMfa blocking AAL1 session...');
   
-  // Login standard AAL1 user (un-enrolled or voluntary before TOTP challenge)
+  // Login standard AAL1 user (un-enrolled front desk)
   const aal1Login = await makeRequest('POST', '/auth/login', {
     email: 'phase1-fd@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -176,7 +205,7 @@ async function runEvidenceAudit() {
     aal1Login.cookies
   );
 
-  const passE2 = aal1BlockRes.status === 403 || aal1BlockRes.status === 401;
+  const passE2 = aal1BlockRes.status === 403;
 
   results.push({
     evidenceNum: 2,
@@ -192,26 +221,15 @@ async function runEvidenceAudit() {
   // ----------------------------------------------------------------
   console.log('Executing Evidence 3: requireMfa allowing AAL2 session...');
   
-  // Enroll & verify RN user to get an AAL2 session
-  const rnLogin = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-rn@radiantilyk.com',
-    password: 'Phase1Test!2026',
-  });
-  const rnStart = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, rnLogin.cookies);
-  const rnCode = authenticator.generate(rnStart.body.data?.secret);
-  const rnVerify = await makeRequest('POST', '/auth/mfa/enroll/verify', {
-    factorId: rnStart.body.data?.factorId,
-    code: rnCode,
-  }, rnLogin.cookies);
-
-  const rnAal2Cookies = rnVerify.cookies;
+  // Enroll & verify RN user to get a fresh AAL2 session
+  const rnSetup = await setupEnrolledUser('phase1-rn@radiantilyk.com', 'Phase1Test!2026');
 
   // Access MFA-protected route with AAL2 session
   const aal2AllowRes = await makeRequest(
     'POST',
     '/auth/mfa/recovery/regenerate',
     undefined,
-    rnAal2Cookies
+    rnSetup.aal2Cookies
   );
 
   const passE3 = aal2AllowRes.status === 200 && aal2AllowRes.body.success === true;
@@ -230,12 +248,12 @@ async function runEvidenceAudit() {
   // ----------------------------------------------------------------
   console.log('Executing Evidence 4: requireRecentAal2 rejecting session older than 10 minutes...');
   
-  // Simulate an expired session (>10m ago) via X-Test-Mfa-Age header in isolated test context
+  // Access sensitive endpoint with simulated 15-minute old MFA session
   const expiredSessionRes = await makeRequest(
     'POST',
     '/auth/mfa/recovery/regenerate',
     undefined,
-    rnAal2Cookies,
+    rnSetup.aal2Cookies,
     { 'X-Test-Mfa-Age-Minutes': '15' }
   );
 
