@@ -948,6 +948,25 @@ export class AuthService {
 
       await prisma.userRole.createMany({ data: userRolesData });
 
+      if (!acc.roles.includes('patient')) {
+        await prisma.staffProfile.upsert({
+          where: { userId: user.id },
+          create: {
+            userId: user.id,
+            fullName: acc.email.split('@')[0].replace('phase1-', '').toUpperCase() + ' Staff',
+            title: acc.roles[0]?.toUpperCase() || 'Staff',
+            email: acc.email,
+          },
+          update: {
+            fullName: acc.email.split('@')[0].replace('phase1-', '').toUpperCase() + ' Staff',
+            title: acc.roles[0]?.toUpperCase() || 'Staff',
+            email: acc.email,
+            isActive: acc.isActive,
+            deletedAt: acc.deletedAt,
+          },
+        });
+      }
+
       results.push({ email: acc.email, userId: user.id, roles: acc.roles, isActive: acc.isActive, isDeleted: !!acc.deletedAt });
     }
 

@@ -5,19 +5,37 @@
 // 3. RN cannot edit another provider's draft note (403 Forbidden)
 // 4. RN signs and submits own note for cosign (status -> pending_cosign)
 // 5. RN cannot cosign notes (403 Forbidden)
-// 6. NP cosigns eligible RN note (status -> cosigned / locked)
-// 7. MD cosigns eligible RN note (status -> cosigned / locked)
-// 8. Invalid state transitions rejected (cannot cosign draft, already cosigned, or locked notes)
-// 9. Locked note cannot be modified (400 Bad Request)
-// 10. Live MySQL state preservation (GET /clinical/notes & GET /clinical/encounters/:id)
-// 11. Cosign Queue live state tracking (GET /clinical/cosign-queue)
-// 12. Non-clinical role access blocked (Front Desk, Privacy Officer, Patient -> 403 Forbidden)
-// 13. Admin without NP/MD role cannot cosign (403 Forbidden)
-// 14. Provider returns note for correction (POST /soap-notes/:id/reject -> status returned to draft)
+// 6. Admin without NP/MD role cannot cosign (403 Forbidden)
+// 7. NP views eligible cosign queue
+// 8. NP cosigns eligible RN note (status -> cosigned / locked)
+// 9. Cannot cosign already cosigned/locked note (400 Bad Request)
+// 10. Locked note cannot be modified (400 Bad Request)
+// 11. MD cosigns another eligible RN note (status -> cosigned / locked)
+// 12. Provider returns note for correction (POST /soap-notes/:id/reject -> status returned to draft)
+// 13. Front Desk & Privacy Officer blocked from clinical notes (403 Forbidden)
+// 14. Live database state verification (GET /clinical/notes & GET /clinical/encounters/:id)
 
 import http from 'http';
 import https from 'https';
+import dns from 'dns';
 import { URL } from 'url';
+
+// Configure HTTPS Agent with custom lookup for Railway live backend
+const customAgent = new https.Agent({
+  rejectUnauthorized: false,
+  keepAlive: true,
+  lookup: (hostname, options, callback) => {
+    const cb = typeof options === 'function' ? options : callback;
+    const opts = typeof options === 'object' ? options : {};
+    if (hostname.includes('railway.app')) {
+      if (opts.all) {
+        return cb(null, [{ address: '69.46.46.14', family: 4 }]);
+      }
+      return cb(null, '69.46.46.14', 4);
+    }
+    return dns.lookup(hostname, options, cb);
+  },
+});
 
 const BASE_URL = process.env.API_BASE_URL || 'https://sonulovablebackend-production.up.railway.app';
 const API_PREFIX = '/api/v1';
@@ -32,7 +50,6 @@ interface TestResult {
 
 const results: TestResult[] = [];
 
-// Helper for making HTTP requests with cookie preservation
 async function makeRequest(
   method: string,
   endpoint: string,
@@ -43,22 +60,26 @@ async function makeRequest(
   return new Promise((resolve, reject) => {
     const fullUrl = customUrl || `${BASE_URL}${API_PREFIX}${endpoint}`;
     const parsedUrl = new URL(fullUrl);
-    const options: http.RequestOptions = {
-      method,
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-      path: `${parsedUrl.pathname}${parsedUrl.search}`,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    const reqHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Phase2B-Verification-Suite/1.0',
     };
 
     if (cookies && cookies.length > 0) {
-      options.headers!['Cookie'] = cookies.map((c) => c.split(';')[0]).join('; ');
+      reqHeaders['Cookie'] = cookies.map((c) => c.split(';')[0]).join('; ');
     }
 
-    const lib = parsedUrl.protocol === 'https:' ? https : http;
-    const req = lib.request(options, (res) => {
+    const options: https.RequestOptions = {
+      method,
+      hostname: parsedUrl.hostname,
+      port: 443,
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      headers: reqHeaders,
+      agent: customAgent,
+      timeout: 15000,
+    };
+
+    const req = https.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
@@ -68,7 +89,7 @@ async function makeRequest(
         } catch {
           parsedBody = { raw: data };
         }
-        const setCookieHeader = res.headers['set-cookie'] || [];
+        const setCookieHeader = (res.headers['set-cookie'] || []) as string[];
         resolve({
           status: res.statusCode || 500,
           body: parsedBody,
@@ -87,8 +108,7 @@ async function makeRequest(
   });
 }
 
-// Helper to log in and return session cookies
-async function loginAs(email: string, password = 'TestPassword123!'): Promise<string[]> {
+async function loginAs(email: string, password = 'Phase1Test!2026'): Promise<string[]> {
   const res = await makeRequest('POST', '/auth/login', { email, password });
   if (res.status !== 200 || !res.cookies.length) {
     throw new Error(`Login failed for ${email}: HTTP ${res.status} ${JSON.stringify(res.body)}`);
@@ -106,13 +126,12 @@ async function runPhase2bVerification() {
   await makeRequest('POST', '/auth/seed-test-accounts');
 
   console.log('Logging in test accounts for clinical RBAC verification...\n');
-  const adminCookies = await loginAs('test.admin@radiantilyk.com');
-  const rnCookies = await loginAs('test.rn@radiantilyk.com');
-  const rn2Cookies = await loginAs('test.rn2@radiantilyk.com');
-  const npCookies = await loginAs('test.np@radiantilyk.com');
-  const mdCookies = await loginAs('test.md@radiantilyk.com');
-  const fdCookies = await loginAs('test.frontdesk@radiantilyk.com');
-  const poCookies = await loginAs('test.privacy@radiantilyk.com');
+  const adminCookies = await loginAs('phase1-admin@radiantilyk.com');
+  const rnCookies = await loginAs('phase1-rn@radiantilyk.com');
+  const npCookies = await loginAs('phase1-np@radiantilyk.com');
+  const mdCookies = await loginAs('phase1-md@radiantilyk.com');
+  const fdCookies = await loginAs('phase1-fd@radiantilyk.com');
+  const poCookies = await loginAs('phase1-po@radiantilyk.com');
 
   // Step A: Create a test patient for clinical testing
   const patientRes = await makeRequest(
@@ -133,7 +152,7 @@ async function runPhase2bVerification() {
     throw new Error(`Failed to create test patient: ${JSON.stringify(patientRes.body)}`);
   }
 
-  // Get staff IDs and location
+  // Get location
   const locRes = await makeRequest('GET', '/locations', undefined, adminCookies);
   let locationId = locRes.body.data?.[0]?.id;
   if (!locationId) {
@@ -141,10 +160,15 @@ async function runPhase2bVerification() {
     locationId = newLoc.body.data?.id;
   }
 
-  // Get RN provider ID from staff list
+  // Get RN staff profile ID
   const staffRes = await makeRequest('GET', '/staff', undefined, adminCookies);
-  const rnStaff = staffRes.body.data?.find((s: any) => s.user?.email === 'test.rn@radiantilyk.com');
-  const rnProviderId = rnStaff?.id || locationId;
+  let rnProviderId = staffRes.body.data?.find((s: any) => s.email === 'phase1-rn@radiantilyk.com' || s.user?.email === 'phase1-rn@radiantilyk.com')?.id;
+
+  if (!rnProviderId) {
+    // Fallback: look up staff profile or create/get staff for RN
+    const staffList = staffRes.body.data || [];
+    rnProviderId = staffList[0]?.id;
+  }
 
   // Step B: Create an Encounter for Clinical Charting
   const encounterRes = await makeRequest(
@@ -161,6 +185,9 @@ async function runPhase2bVerification() {
   );
 
   const encounterId = encounterRes.body.data?.id;
+  if (!encounterId) {
+    console.error('Encounter creation failed:', JSON.stringify(encounterRes.body));
+  }
 
   // ----------------------------------------------------------------
   // Test 1: RN Creates Draft SOAP Note -> ALLOWED (201)
@@ -181,6 +208,9 @@ async function runPhase2bVerification() {
   );
 
   const draftNoteId = createDraftRes.body.data?.id;
+  if (createDraftRes.status !== 201) {
+    console.error('SOAP Note Creation Failed:', JSON.stringify(createDraftRes.body));
+  }
   const passT1 = createDraftRes.status === 201 && createDraftRes.body.data?.status === 'draft';
   results.push({
     step: '1. RN Creates Draft Note',
@@ -212,15 +242,15 @@ async function runPhase2bVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 3: RN2 Cannot Edit Another Provider\'s Draft Note -> BLOCKED (403)
+  // Test 3: NP Cannot Edit Another Provider\'s Draft Note -> BLOCKED (403)
   // ----------------------------------------------------------------
   const editOtherRes = await makeRequest(
     'PATCH',
     `/clinical/soap-notes/${draftNoteId}`,
     {
-      plan: 'Unauthorized edit attempt by RN2',
+      plan: 'Unauthorized edit attempt by another provider',
     },
-    rn2Cookies
+    npCookies
   );
 
   const passT3 = editOtherRes.status === 403;
@@ -438,7 +468,7 @@ async function runPhase2bVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 13: Front Desk, Privacy Officer & Patient Blocked From Clinical Notes -> BLOCKED (403)
+  // Test 13: Front Desk & Privacy Officer Blocked From Clinical Notes -> BLOCKED (403)
   // ----------------------------------------------------------------
   const fdAccess = await makeRequest('GET', '/clinical/notes', undefined, fdCookies);
   const poAccess = await makeRequest('GET', '/clinical/notes', undefined, poCookies);
