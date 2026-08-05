@@ -218,6 +218,8 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   // Test 5: Admin Appointment Creation -> ALLOWED
   // ----------------------------------------------------------------
+  const adminStartAt = new Date(Date.now() + 86400000 * 10).toISOString();
+  const adminEndAt = new Date(Date.now() + 86400000 * 10 + 3600000).toISOString();
   const adminApptRes = await makeRequest(
     'POST',
     '/appointments',
@@ -226,8 +228,8 @@ async function runPhase2aVerification() {
       staffId,
       locationId,
       serviceIds: [serviceId],
-      startAt: new Date(Date.now() + 172800000).toISOString(),
-      endAt: new Date(Date.now() + 172800000 + 3600000).toISOString(),
+      startAt: adminStartAt,
+      endAt: adminEndAt,
       notes: 'Admin Booking',
     },
     adminCookies
@@ -361,7 +363,7 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   // Test 12: Appointment Reschedule (Admin Permitted)
   // ----------------------------------------------------------------
-  const rescheduleStartAt = new Date(Date.now() + 172800000 + 7200000).toISOString();
+  const rescheduleStartAt = new Date(Date.now() + 86400000 * 10 + 7200000).toISOString();
   const rescheduleRes = await makeRequest(
     'POST',
     `/appointments/${adminApptId}/reschedule`,
