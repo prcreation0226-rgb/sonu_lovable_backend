@@ -121,13 +121,13 @@ async function runFinalArchivalSuite() {
   const factorId = startEnroll.body.data?.factorId;
   const secret = startEnroll.body.data?.secret;
 
-  // Complete enrollment via verify
+  // Complete enrollment via verify using startEnroll.cookies (contains rka_mfa_pending)
   const code = authenticator.generate(secret);
   const verifyEnroll = await makeRequest(
     'POST',
     '/auth/mfa/enroll/verify',
     { factorId, code },
-    npLogin1.cookies
+    startEnroll.cookies
   );
 
   // Subsequent login for enrolled user returns 202 MFA challenge with rka_mfa_pending ONLY
