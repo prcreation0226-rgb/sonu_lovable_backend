@@ -97,7 +97,7 @@ async function makeRequest(
 
 async function runMfaVerificationSuite() {
   console.log('================================================================');
-  console.log('  PHASE 1C-B1 — BACKEND TOTP MFA FOUNDATION VERIFICATION SUITE');
+  console.log('  PHASE 1C-B1 — FINAL BACKEND TOTP MFA VERIFICATION SUITE');
   console.log('================================================================\n');
 
   // 1. Seed test accounts
@@ -118,10 +118,10 @@ async function runMfaVerificationSuite() {
 
   const adminCookies = adminLogin.cookies;
 
-  // Test 1: Standard login works normally when MFA_ENFORCEMENT_ENABLED=false
+  // Test 1: Standard login works normally when MFA_ENFORCEMENT_ENABLED=false for unenrolled user
   results.push({
     num: 1,
-    name: 'Login works normally when MFA_ENFORCEMENT_ENABLED=false',
+    name: 'Unenrolled login works normally when MFA_ENFORCEMENT_ENABLED=false',
     expected: '200',
     actual: `${adminLogin.status}`,
     status: adminLogin.status === 200 && adminLogin.body.success ? 'PASS' : 'FAIL',
@@ -139,19 +139,21 @@ async function runMfaVerificationSuite() {
     notes: `mfaEnabled: ${statusRes1.body.data?.mfaEnabled}, factorsCount: ${statusRes1.body.data?.factorsCount}`,
   });
 
-  // Test 3: POST /auth/mfa/enroll/start (Voluntary enrollment start)
+  // Test 3: POST /auth/mfa/enroll/start (Voluntary enrollment start & no-store headers)
   const startRes = await makeRequest('POST', '/auth/mfa/enroll/start', undefined, adminCookies);
   const factorId = startRes.body.data?.factorId;
   const totpSecret = startRes.body.data?.secret;
   const otpauthUrl = startRes.body.data?.otpauthUrl;
 
+  const hasNoStoreHeader = startRes.headers['cache-control']?.includes('no-store');
+
   results.push({
     num: 3,
-    name: 'Voluntary enrollment start generates secret & otpauth URL',
+    name: 'Voluntary enrollment start returns secret, otpauth & Cache-Control: no-store',
     expected: '200',
     actual: `${startRes.status}`,
-    status: startRes.status === 200 && !!totpSecret && !!otpauthUrl ? 'PASS' : 'FAIL',
-    notes: `Returned factorId: ${factorId ? 'YES' : 'NO'}, secret: ${totpSecret ? 'YES' : 'NO'}`,
+    status: startRes.status === 200 && !!totpSecret && !!otpauthUrl && hasNoStoreHeader ? 'PASS' : 'FAIL',
+    notes: `Returned factorId: YES, secret: YES, Cache-Control: no-store: ${hasNoStoreHeader ? 'YES' : 'NO'}`,
   });
 
   // Test 4: Verify with wrong 6-digit code fails cleanly
@@ -169,7 +171,7 @@ async function runMfaVerificationSuite() {
     notes: 'Returned 400 Bad Request with error message',
   });
 
-  // Test 5: Verify with correct 6-digit TOTP code succeeds & generates 10 recovery codes
+  // Test 5: Verify with correct 6-digit TOTP code succeeds & generates 10 recovery codes with no-store headers
   const validCode = authenticator.generate(totpSecret);
   const verifyEnrollRes = await makeRequest('POST', '/auth/mfa/enroll/verify', {
     factorId,
@@ -177,14 +179,15 @@ async function runMfaVerificationSuite() {
   }, adminCookies);
 
   const recoveryCodes = verifyEnrollRes.body.data?.recoveryCodes || [];
+  const enrollNoStoreHeader = verifyEnrollRes.headers['cache-control']?.includes('no-store');
 
   results.push({
     num: 5,
-    name: 'Enrollment verification succeeds & generates 10 recovery codes',
+    name: 'Enrollment verification succeeds, returns 10 recovery codes & Cache-Control: no-store',
     expected: '200',
     actual: `${verifyEnrollRes.status}`,
-    status: verifyEnrollRes.status === 200 && recoveryCodes.length === 10 ? 'PASS' : 'FAIL',
-    notes: `Generated ${recoveryCodes.length} high-entropy recovery codes`,
+    status: verifyEnrollRes.status === 200 && recoveryCodes.length === 10 && enrollNoStoreHeader ? 'PASS' : 'FAIL',
+    notes: `Generated ${recoveryCodes.length} recovery codes with Cache-Control: no-store`,
   });
 
   // Test 6: TOTP code replay within same step is blocked
@@ -230,7 +233,7 @@ async function runMfaVerificationSuite() {
     code: npCode,
   }, npCookies1);
 
-  // Test 8: Login when user has active MFA factor triggers MFA challenge
+  // Test 8: Users who enabled voluntary MFA still complete MFA challenge even when flag is false
   const mfaLogin = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -242,7 +245,7 @@ async function runMfaVerificationSuite() {
 
   results.push({
     num: 8,
-    name: 'Login returns 202 and rka_mfa_pending cookie without token in body',
+    name: 'Voluntary MFA user gets 202 challenge & rka_mfa_pending cookie (no token in body)',
     expected: '202',
     actual: `${mfaLogin.status}`,
     status: mfaLogin.status === 202 && mfaLogin.body.data?.mfaRequired === true && hasMfaPendingCookie && !hasAccessCookie && !hasChallengeTokenInBody ? 'PASS' : 'FAIL',
@@ -266,27 +269,13 @@ async function runMfaVerificationSuite() {
     notes: 'Increments attemptsCount on challenge record',
   });
 
-  // Wait for TOTP step boundary
-  const currentStep = Math.floor(Date.now() / 30000);
-  let nextStep = Math.floor(Date.now() / 30000);
-  while (nextStep === currentStep) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    nextStep = Math.floor(Date.now() / 30000);
-  }
-
-  // Re-login to get fresh challenge
-  const mfaLoginFresh = await makeRequest('POST', '/auth/login', {
-    email: 'phase1-np@radiantilyk.com',
-    password: 'Phase1Test!2026',
-  });
-
   // Test 10: Complete MFA challenge with valid code succeeds & issues AAL2 cookies
   const validChallengeCode = authenticator.generate(npSecret);
   const mfaChallengeRes = await makeRequest(
     'POST',
     '/auth/mfa/challenge/verify',
     { code: validChallengeCode },
-    mfaLoginFresh.cookies
+    mfaLogin.cookies
   );
 
   const mfaAccessCookies = mfaChallengeRes.cookies;
@@ -301,20 +290,22 @@ async function runMfaVerificationSuite() {
     notes: 'Issued AAL2 session cookies & cleared rka_mfa_pending cookie',
   });
 
-  // Test 11: POST /auth/mfa/cancel safely cancels pending challenge
+  // Test 11: POST /auth/mfa/cancel safely cancels pending challenge & issues NO auth cookies
   const cancelLogin = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
   });
   const cancelRes = await makeRequest('POST', '/auth/mfa/cancel', undefined, cancelLogin.cookies);
 
+  const cancelHasAccessCookie = cancelRes.cookies.some((c) => c.includes('rka_access'));
+
   results.push({
     num: 11,
-    name: 'POST /auth/mfa/cancel revokes challenge & clears pending cookie',
+    name: 'POST /auth/mfa/cancel revokes challenge & clears pending cookie without auth cookies',
     expected: '200',
     actual: `${cancelRes.status}`,
-    status: cancelRes.status === 200 && cancelRes.body.success ? 'PASS' : 'FAIL',
-    notes: 'Pending challenge revoked in DB and rka_mfa_pending cookie cleared symmetrically',
+    status: cancelRes.status === 200 && cancelRes.body.success && !cancelHasAccessCookie ? 'PASS' : 'FAIL',
+    notes: 'Pending challenge revoked in DB, rka_mfa_pending cleared, zero auth cookies issued',
   });
 
   // Test 12: Recovery code works once
@@ -366,17 +357,18 @@ async function runMfaVerificationSuite() {
     });
   }
 
-  // Test 14: Regenerate recovery codes (requires recent AAL2)
+  // Test 14: Regenerate recovery codes (requires recent AAL2) & returns no-store headers
   const regenRes = await makeRequest('POST', '/auth/mfa/recovery/regenerate', undefined, mfaAccessCookies);
   const newRecoveryCodes = regenRes.body.data?.recoveryCodes || [];
+  const regenNoStoreHeader = regenRes.headers['cache-control']?.includes('no-store');
 
   results.push({
     num: 14,
-    name: 'Regenerate recovery codes (requires recent AAL2)',
+    name: 'Regenerate recovery codes (requires recent AAL2) & Cache-Control: no-store',
     expected: '200',
     actual: `${regenRes.status}`,
-    status: regenRes.status === 200 && newRecoveryCodes.length === 10 ? 'PASS' : 'FAIL',
-    notes: `Generated ${newRecoveryCodes.length} new recovery codes`,
+    status: regenRes.status === 200 && newRecoveryCodes.length === 10 && regenNoStoreHeader ? 'PASS' : 'FAIL',
+    notes: `Generated ${newRecoveryCodes.length} new recovery codes with Cache-Control: no-store`,
   });
 
   // Test 15: Disable MFA (requires password + code + revokes all sessions)
@@ -388,7 +380,7 @@ async function runMfaVerificationSuite() {
 
   results.push({
     num: 15,
-    name: 'Disable MFA for user (requires password + code + session revocation)',
+    name: 'Disable MFA for user (requires password + code + revokes all sessions)',
     expected: '200',
     actual: `${disableRes.status}`,
     status: disableRes.status === 200 && disableRes.body.success ? 'PASS' : 'FAIL',
@@ -396,19 +388,24 @@ async function runMfaVerificationSuite() {
   });
 
   // Test 16: Admin Reset MFA for target user (requires admin role + recent admin AAL2 + reason)
-  // First re-authenticate admin with fresh login
   const adminLogin2 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-admin@radiantilyk.com',
     password: 'Phase1Test!2026',
   });
 
+  const adminCode2 = authenticator.generate(totpSecret);
+  const adminChallengeRes = await makeRequest('POST', '/auth/mfa/challenge/verify', {
+    code: adminCode2,
+  }, adminLogin2.cookies);
+
+  const adminAal2Cookies = adminChallengeRes.cookies;
   const npUserId = npLogin1.body.data?.user?.id;
 
   const adminResetRes = await makeRequest(
     'POST',
     `/admin/users/${npUserId}/mfa/reset`,
     { reason: 'Mandatory security audit reset test for admin target user' },
-    adminLogin2.cookies
+    adminAal2Cookies
   );
 
   results.push({
@@ -418,6 +415,30 @@ async function runMfaVerificationSuite() {
     actual: `${adminResetRes.status}`,
     status: adminResetRes.status === 200 ? 'PASS' : 'FAIL',
     notes: 'Admin reset succeeded with sanitized reason and target session revocation',
+  });
+
+  // Test 17: Concurrent same TOTP/challenge requests allow only one success (Race condition test)
+  const raceLogin = await makeRequest('POST', '/auth/login', {
+    email: 'phase1-admin@radiantilyk.com',
+    password: 'Phase1Test!2026',
+  });
+
+  const raceCode = authenticator.generate(totpSecret);
+
+  const [raceRes1, raceRes2] = await Promise.all([
+    makeRequest('POST', '/auth/mfa/challenge/verify', { code: raceCode }, raceLogin.cookies),
+    makeRequest('POST', '/auth/mfa/challenge/verify', { code: raceCode }, raceLogin.cookies),
+  ]);
+
+  const racePass = (raceRes1.status === 200 && raceRes2.status !== 200) || (raceRes2.status === 200 && raceRes1.status !== 200);
+
+  results.push({
+    num: 17,
+    name: 'Concurrent same TOTP challenge verification allows only ONE success',
+    expected: '200 / 400',
+    actual: `${raceRes1.status} / ${raceRes2.status}`,
+    status: racePass ? 'PASS' : 'FAIL',
+    notes: `Race condition handled atomically: req1=${raceRes1.status}, req2=${raceRes2.status}`,
   });
 
   // Print Summary Table

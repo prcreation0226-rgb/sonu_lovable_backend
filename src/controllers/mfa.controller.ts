@@ -56,6 +56,9 @@ export class MfaController {
 
       const result = await MfaService.startEnrollment(userId, clientIp);
 
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Pragma', 'no-cache');
+
       res.status(200).json({
         success: true,
         data: result,
@@ -109,6 +112,9 @@ export class MfaController {
         setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
         clearMfaPendingCookie(res);
 
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Pragma', 'no-cache');
+
         res.status(200).json({
           success: true,
           data: {
@@ -120,6 +126,9 @@ export class MfaController {
         });
         return;
       }
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Pragma', 'no-cache');
 
       res.status(200).json({
         success: true,
@@ -254,6 +263,9 @@ export class MfaController {
       const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '0.0.0.0';
 
       const result = await MfaService.regenerateRecoveryCodes(authUser.id, clientIp);
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Pragma', 'no-cache');
 
       res.status(200).json({
         success: true,

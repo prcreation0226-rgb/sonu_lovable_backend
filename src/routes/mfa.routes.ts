@@ -3,8 +3,11 @@ import { MfaController } from '../controllers/mfa.controller';
 import { authenticate, optionalAuth } from '../middleware/auth';
 import { requireRoles } from '../middleware/rbac';
 import { requireRecentAal2 } from '../middleware/mfa';
+import { mfaLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
+
+router.use(mfaLimiter);
 
 /**
  * @route   POST /api/v1/auth/mfa/challenge/verify
