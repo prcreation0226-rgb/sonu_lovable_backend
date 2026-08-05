@@ -53,8 +53,7 @@ export class AuthService {
   static async login(
     input: LoginInput,
     ipAddress: string,
-    userAgent: string,
-    reqHeaders?: Record<string, any>
+    userAgent: string
   ): Promise<LoginResult> {
     const { email, password } = input;
     const cleanEmail = email.trim().toLowerCase();
@@ -190,8 +189,7 @@ export class AuthService {
 
     // 4. Check MFA Requirement (Enforcement flag & Active factor check)
     const isRequiredRole = roles.some((r) => (env.MFA_REQUIRED_ROLES as readonly string[]).includes(r));
-    const isTestEnforcement = reqHeaders?.['x-test-mfa-enforcement'] === 'true';
-    const mustEnforceMfa = (env.MFA_ENFORCEMENT_ENABLED || isTestEnforcement) && isRequiredRole;
+    const mustEnforceMfa = env.MFA_ENFORCEMENT_ENABLED && isRequiredRole;
     const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active', disabledAt: null } })) > 0;
 
     if (mustEnforceMfa || hasActiveMfa) {

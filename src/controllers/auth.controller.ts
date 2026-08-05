@@ -27,7 +27,7 @@ export class AuthController {
         || '0.0.0.0';
       const userAgent = req.headers['user-agent'] || '';
 
-      const result = await AuthService.login(req.body, ip, userAgent, req.headers);
+      const result = await AuthService.login(req.body, ip, userAgent);
 
       if (result.mfaRequired) {
         if (result.challengeToken) {

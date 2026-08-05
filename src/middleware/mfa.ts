@@ -89,17 +89,8 @@ export async function requireRecentAal2(
       throw new AppError('MFA authentication required (AAL2 required)', 403, ErrorCodes.FORBIDDEN);
     }
 
-    let mfaAgeMs = session.mfaVerifiedAt ? Date.now() - session.mfaVerifiedAt.getTime() : Infinity;
-    const testAgeHeader = req.headers['x-test-mfa-age-minutes'];
-    if (testAgeHeader) {
-      const minutes = parseFloat(testAgeHeader as string);
-      if (!isNaN(minutes)) {
-        mfaAgeMs = minutes * 60 * 1000;
-      }
-    }
-
     const TEN_MINUTES_MS = 10 * 60 * 1000;
-    const isRecent = session.mfaVerifiedAt && mfaAgeMs <= TEN_MINUTES_MS;
+    const isRecent = session.mfaVerifiedAt && Date.now() - session.mfaVerifiedAt.getTime() <= TEN_MINUTES_MS;
 
     if (!isRecent) {
       throw new AppError('Recent MFA verification required (within last 10 minutes)', 403, ErrorCodes.FORBIDDEN);
