@@ -1,6 +1,5 @@
 import https from 'https';
 import dns from 'dns';
-import { prisma } from '../src/config/database';
 
 // Configure HTTPS Agent with custom lookup for Railway live backend
 const customAgent = new https.Agent({
@@ -92,49 +91,10 @@ async function makeRequest(
   });
 }
 
-async function ensureReferenceFixtures() {
-  console.log('Seeding reference fixtures (Location & Service) directly via script...');
-
-  let testLocation = await prisma.location.findFirst({ where: { name: 'RKA San Jose Main', deletedAt: null } });
-  if (!testLocation) {
-    testLocation = await prisma.location.create({
-      data: {
-        name: 'RKA San Jose Main',
-        address: '100 N First St',
-        city: 'San Jose',
-        state: 'CA',
-        zipCode: '95113',
-        phone: '(408) 555-0100',
-        timezone: 'America/Los_Angeles',
-      },
-    });
-  }
-
-  let testService = await prisma.service.findFirst({ where: { name: 'Phase2A Test Consultation', deletedAt: null } });
-  if (!testService) {
-    testService = await prisma.service.create({
-      data: {
-        name: 'Phase2A Test Consultation',
-        slug: 'phase2a-test-consultation',
-        description: 'Aesthetic consultation for Phase 2A verification',
-        durationMinutes: 30,
-        priceCents: 15000,
-        isActive: true,
-      },
-    });
-  }
-
-  return { locationId: testLocation.id, serviceId: testService.id };
-}
-
 async function runPhase2aVerification() {
   console.log('================================================================');
   console.log('  PHASE 2A — PATIENT & APPOINTMENT CONNECTIVITY & ROLE EVIDENCE');
   console.log('================================================================\n');
-
-  // 0. Reference Fixture Setup (Script-owned, isolated from production auth)
-  const { locationId, serviceId } = await ensureReferenceFixtures();
-  console.log(`Reference fixtures ready: locationId=${locationId}, serviceId=${serviceId}\n`);
 
   // Seed test staff accounts
   await makeRequest('POST', '/auth/seed-test-accounts');
@@ -159,6 +119,23 @@ async function runPhase2aVerification() {
 
   const patientLogin = await makeRequest('POST', '/auth/login', { email: 'phase1-patient@radiantilyk.com', password: 'Phase1Test!2026' });
   const patientCookies = patientLogin.cookies;
+
+  // Reference Fixtures (Location & Service via Admin REST API)
+  console.log('\nEnsuring reference fixtures (Location & Service) via Admin REST API...');
+  const locListRes = await makeRequest('GET', '/locations', undefined, adminCookies);
+  let locationId = locListRes.body.data?.[0]?.id;
+  if (!locationId) {
+    const createLocRes = await makeRequest('POST', '/locations', { name: 'RKA San Jose Main', city: 'San Jose', state: 'CA', timezone: 'America/Los_Angeles' }, adminCookies);
+    locationId = createLocRes.body.data?.id;
+  }
+
+  const srvListRes = await makeRequest('GET', '/services', undefined, adminCookies);
+  let serviceId = srvListRes.body.data?.[0]?.id;
+  if (!serviceId) {
+    const createSrvRes = await makeRequest('POST', '/services', { name: 'Phase2A Test Consultation', durationMinutes: 30, priceCents: 15000 }, adminCookies);
+    serviceId = createSrvRes.body.data?.id;
+  }
+  console.log(`Reference fixtures active: locationId=${locationId}, serviceId=${serviceId}\n`);
 
   // ----------------------------------------------------------------
   // Test 1: Patient Creation in Live MySQL

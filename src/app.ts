@@ -112,6 +112,7 @@ import billingRouter from './routes/billing.routes';
 import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 import availabilityRouter from './routes/availability.routes';
+import serviceRouter from './routes/service.routes';
 
 
 
@@ -123,6 +124,7 @@ const apiRouters: [string, any][] = [
   ['/roles', roleRouter],
   ['/staff', staffRouter],
   ['/locations', locationRouter],
+  ['/services', serviceRouter],
   ['/patients', patientRouter],
   ['/appointments', appointmentRouter],
   ['/clinical', clinicalRouter],
