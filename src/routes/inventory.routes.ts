@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { InventoryController } from '../controllers/inventory.controller';
 import { authenticate } from '../middleware/auth';
-import { requireRoles, CLINICAL_ROLES } from '../middleware/rbac';
+import { requireRoles } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { auditPhiAccess } from '../middleware/audit';
 import {
@@ -59,9 +59,10 @@ router.delete(
 
 // ---- Inventory Lots ----
 
+// Strict RBAC Rule: Admin ONLY for lot creation/stock receipt. FD, RN, NP, MD receive 403 Forbidden.
 router.post(
   '/lots',
-  requireRoles('admin', 'medical_director', 'nurse_practitioner', 'rn_injector'),
+  requireRoles('admin'),
   validate({ body: CreateInventoryLotSchema }),
   InventoryController.createLot
 );
@@ -84,17 +85,18 @@ router.get(
   InventoryController.getLotById
 );
 
-// ---- Treatment Usage (Clinical lot consumption) ----
+// ---- Treatment Usage (Clinical lot consumption: Admin, RN Injector, Nurse Practitioner) ----
+// Medical Director remains read-only unless separately authorized.
 
 router.post(
   '/usage',
-  requireRoles(...CLINICAL_ROLES),
+  requireRoles('admin', 'nurse_practitioner', 'rn_injector'),
   validate({ body: RecordTreatmentUsageSchema }),
   auditPhiAccess('encounter', 'update'),
   InventoryController.recordTreatmentUsage
 );
 
-// ---- Inventory Movements ----
+// ---- Inventory Movements (Admin only) ----
 
 router.post(
   '/movements',
