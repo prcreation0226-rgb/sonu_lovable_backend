@@ -97,8 +97,11 @@ async function runPhase2aVerification() {
   console.log('  PHASE 2A — PATIENT & APPOINTMENT LIVE CONNECTIVITY VERIFICATION');
   console.log('================================================================\n');
 
-  // Seed test staff accounts
-  await makeRequest('POST', '/auth/seed-test-accounts');
+  // Seed test staff accounts + reference data (location, service)
+  const seedRes = await makeRequest('POST', '/auth/seed-test-accounts');
+  const seededLocationId = seedRes.body.data?.locationId;
+  const seededServiceId = seedRes.body.data?.serviceId;
+  console.log(`   Seeded reference data: locationId=${seededLocationId}, serviceId=${seededServiceId}`);
 
   // 1. Admin Login (Permitted for both Patient & Appointment Writes)
   console.log('1. Logging in as Admin...');
@@ -183,19 +186,11 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   console.log('6. Test 4: Creating an appointment as Admin...');
   
-  // Fetch a valid staffId and locationId from live DB
+  // Use seeded reference data
   const staffRes = await makeRequest('GET', '/staff', undefined, adminCookies);
-  const locationRes = await makeRequest('GET', '/locations', undefined, adminCookies);
-  const servicesRes = await makeRequest('GET', '/services', undefined, adminCookies);
-
-  // Debug: log reference data structure
-  console.log(`   Staff endpoint: HTTP ${staffRes.status}, keys: ${JSON.stringify(Object.keys(staffRes.body))}, first: ${JSON.stringify(staffRes.body.data?.[0]?.id || staffRes.body[0]?.id || 'NONE')}`);
-  console.log(`   Location endpoint: HTTP ${locationRes.status}, keys: ${JSON.stringify(Object.keys(locationRes.body))}, first: ${JSON.stringify(locationRes.body.data?.[0]?.id || locationRes.body[0]?.id || 'NONE')}`);
-  console.log(`   Services endpoint: HTTP ${servicesRes.status}, keys: ${JSON.stringify(Object.keys(servicesRes.body))}, first: ${JSON.stringify(servicesRes.body.data?.[0]?.id || servicesRes.body[0]?.id || 'NONE')}`);
-
   const staffId = staffRes.body.data?.[0]?.id || staffRes.body[0]?.id;
-  const locationId = locationRes.body.data?.[0]?.id || locationRes.body[0]?.id;
-  const serviceId = servicesRes.body.data?.[0]?.id || servicesRes.body[0]?.id;
+  const locationId = seededLocationId;
+  const serviceId = seededServiceId;
 
   console.log(`   Resolved: staffId=${staffId}, locationId=${locationId}, serviceId=${serviceId}`);
 
