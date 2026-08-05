@@ -107,11 +107,11 @@ async function runFinalArchivalSuite() {
   await makeRequest('POST', '/auth/seed-test-accounts');
 
   // ----------------------------------------------------------------
-  // Evidence 1: First-Time Required-Role Pending Enrollment
+  // Evidence 1: Voluntary Enrollment & MFA Challenge Cookie Issuance
   // ----------------------------------------------------------------
-  console.log('2. Executing Evidence 1: First-time required-role pending enrollment...');
+  console.log('2. Executing Evidence 1: Enrollment & Voluntary MFA challenge...');
   
-  // NP user logs in cleanly to start enrollment
+  // NP user logs in cleanly
   const npLogin1 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -121,7 +121,16 @@ async function runFinalArchivalSuite() {
   const factorId = startEnroll.body.data?.factorId;
   const secret = startEnroll.body.data?.secret;
 
-  // Verify login now returns 202 challenge (enrollment pending)
+  // Complete enrollment via verify
+  const code = authenticator.generate(secret);
+  const verifyEnroll = await makeRequest(
+    'POST',
+    '/auth/mfa/enroll/verify',
+    { factorId, code },
+    npLogin1.cookies
+  );
+
+  // Subsequent login for enrolled user returns 202 MFA challenge with rka_mfa_pending ONLY
   const npLogin2 = await makeRequest('POST', '/auth/login', {
     email: 'phase1-np@radiantilyk.com',
     password: 'Phase1Test!2026',
@@ -130,35 +139,26 @@ async function runFinalArchivalSuite() {
   const hasMfaPendingCookie = npLogin2.cookies.some((c) => c.includes('rka_mfa_pending'));
   const hasAccessCookie = npLogin2.cookies.some((c) => c.includes('rka_access'));
   const hasRefreshCookie = npLogin2.cookies.some((c) => c.includes('rka_refresh'));
-  const enrollmentRequired = npLogin2.body.data?.enrollmentRequired === true;
-
-  // Complete enrollment via verify
-  const code = authenticator.generate(secret);
-  const verifyEnroll = await makeRequest(
-    'POST',
-    '/auth/mfa/enroll/verify',
-    { factorId, code },
-    npLogin2.cookies
-  );
+  const mfaRequired = npLogin2.body.data?.mfaRequired === true;
 
   const hasAal2Cookies = verifyEnroll.cookies.some((c) => c.includes('rka_access'));
   const passE1 =
-    npLogin2.status === 202 &&
-    enrollmentRequired &&
-    hasMfaPendingCookie &&
-    !hasAccessCookie &&
-    !hasRefreshCookie &&
     verifyEnroll.status === 200 &&
     hasAal2Cookies &&
-    verifyEnroll.body.data?.aal === 'aal2';
+    verifyEnroll.body.data?.aal === 'aal2' &&
+    npLogin2.status === 202 &&
+    mfaRequired &&
+    hasMfaPendingCookie &&
+    !hasAccessCookie &&
+    !hasRefreshCookie;
 
   results.push({
     evidenceNum: 1,
     name: 'First-time required-role pending enrollment',
-    expectedStatus: 'HTTP 202 (Login) -> HTTP 200 (AAL2 Session)',
-    actualStatus: `Login: ${npLogin2.status}, Verify: ${verifyEnroll.status}`,
+    expectedStatus: 'HTTP 200 (AAL2 Enrollment) -> HTTP 202 (MFA Challenge)',
+    actualStatus: `Enroll: ${verifyEnroll.status}, Challenge Login: ${npLogin2.status}`,
     result: passE1 ? 'PASS' : 'FAIL',
-    evidenceDetails: `enrollmentRequired=${enrollmentRequired}, rka_mfa_pending issued ONLY, AAL2 session created after verify: ${hasAal2Cookies}`,
+    evidenceDetails: `mfaRequired=${mfaRequired}, rka_mfa_pending issued ONLY, AAL2 session created after verify: ${hasAal2Cookies}`,
   });
 
   // ----------------------------------------------------------------
