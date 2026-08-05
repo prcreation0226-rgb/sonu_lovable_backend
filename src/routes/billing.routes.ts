@@ -18,6 +18,8 @@ import {
 
 const router = Router();
 
+const BILLING_READ_ROLES = ['admin', 'front_desk', 'medical_director', 'nurse_practitioner', 'rn_injector'] as const;
+
 // All billing endpoints require authentication
 router.use(authenticate);
 
@@ -33,20 +35,20 @@ router.post(
 
 router.get(
   '/invoices',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...BILLING_READ_ROLES),
   BillingController.getInvoices
 );
 
 router.get(
   '/invoices/:id',
-  requireRoles(...STAFF_ROLES, 'patient'),
+  requireRoles(...BILLING_READ_ROLES, 'patient'),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getInvoiceById
 );
 
 router.get(
   '/invoices/patient/:patientId',
-  requireRoles(...STAFF_ROLES, 'patient'),
+  requireRoles(...BILLING_READ_ROLES, 'patient'),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getPatientInvoices
 );
@@ -88,7 +90,7 @@ router.post(
 
 router.get(
   '/credits/patient/:patientId',
-  requireRoles(...STAFF_ROLES),
+  requireRoles(...BILLING_READ_ROLES),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getPatientCredits
 );

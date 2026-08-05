@@ -25,7 +25,7 @@ export const CreateInvoiceSchema = z.object({
 
 // ---- Payment Schemas ----
 
-const PAYMENT_METHODS = ['credit_card', 'debit_card', 'cash', 'check', 'stripe', 'patient_credit', 'package'] as const;
+const PAYMENT_METHODS = ['card', 'credit_card', 'debit_card', 'cash', 'check', 'stripe', 'patient_credit', 'package', 'gift_card', 'other'] as const;
 
 export const RecordPaymentSchema = z.object({
   invoiceId: z.string().uuid().optional(),
