@@ -162,7 +162,9 @@ async function runPhase2bVerification() {
 
   // Get RN staff profile ID
   const staffRes = await makeRequest('GET', '/staff', undefined, adminCookies);
+  console.log('Staff list response:', JSON.stringify(staffRes.body));
   let rnProviderId = staffRes.body.data?.find((s: any) => s.email === 'phase1-rn@radiantilyk.com' || s.user?.email === 'phase1-rn@radiantilyk.com')?.id;
+  console.log('Resolved rnProviderId:', rnProviderId);
 
   if (!rnProviderId) {
     // Fallback: look up staff profile or create/get staff for RN

@@ -107,9 +107,20 @@ export class ClinicalService {
 
   // ==========================================
   // ---- SOAP NOTES & IMMUTABILITY GUARD ----
+  private static async getStaffProfile(userId: string) {
+    const staff = await prisma.staffProfile.findFirst({ where: { userId, deletedAt: null } });
+    if (!staff) {
+      throw AppError.forbidden('Staff profile required for clinical charting actions');
+    }
+    return staff;
+  }
+
+  // ==========================================
+  // 3. SOAP NOTES & CLINICAL CHARTING
   // ==========================================
 
   static async createSoapNote(input: CreateSoapNoteInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const encounter = await prisma.encounter.findFirst({ where: { id: input.encounterId, deletedAt: null } });
     if (!encounter) throw AppError.notFound('Encounter');
 
@@ -119,7 +130,7 @@ export class ClinicalService {
       data: {
         encounterId: input.encounterId,
         patientId: input.patientId,
-        authorId: userId,
+        authorId: staff.id,
         subjective: input.subjective,
         objective: input.objective,
         assessment: input.assessment,
@@ -128,7 +139,6 @@ export class ClinicalService {
         cosignedBy: input.cosignerId || undefined,
         signedAt: status === 'signed' ? new Date() : undefined,
         lockedAt: status === 'signed' ? new Date() : undefined,
-        // Store initial version 1
         versions: {
           create: {
             versionNumber: 1,
@@ -146,12 +156,11 @@ export class ClinicalService {
       },
     });
 
-    // If status is pending_cosign, add to CosignQueue
     if (status === 'pending_cosign') {
       await prisma.cosignQueue.create({
         data: {
           noteId: note.id,
-          authorId: userId,
+          authorId: staff.id,
           assignedToId: input.cosignerId || undefined,
           status: 'pending',
         },
@@ -175,6 +184,7 @@ export class ClinicalService {
    * Update Draft SOAP Note (IMMUTABILITY & OWNERSHIP GUARD).
    */
   static async updateSoapNote(noteId: string, input: UpdateSoapNoteInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const note = await prisma.soapNote.findFirst({
       where: { id: noteId, deletedAt: null },
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
@@ -183,7 +193,7 @@ export class ClinicalService {
     if (!note) throw AppError.notFound('SOAP Note');
 
     // OWNERSHIP GUARD: Only the original author can edit their own draft note
-    if (note.authorId !== userId) {
+    if (note.authorId !== staff.id) {
       throw AppError.forbidden('You can only edit your own draft notes');
     }
 
@@ -224,7 +234,6 @@ export class ClinicalService {
       },
     });
 
-    // If transitioned to pending_cosign, update or create CosignQueue entry
     if (newStatus === 'pending_cosign') {
       await prisma.cosignQueue.upsert({
         where: { noteId },
@@ -250,10 +259,11 @@ export class ClinicalService {
    * Author Sign Own Note / Submit for Cosign.
    */
   static async signOwnNote(noteId: string, input: SignSoapNoteInput, userId: string, userRoles: string[], ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
     if (!note) throw AppError.notFound('SOAP Note');
 
-    if (note.authorId !== userId) {
+    if (note.authorId !== staff.id) {
       throw AppError.forbidden('You can only sign your own notes');
     }
 
@@ -270,12 +280,12 @@ export class ClinicalService {
       data: {
         status: newStatus,
         signedAt: now,
-        cosignedBy: isSupervising ? userId : undefined,
+        cosignedBy: isSupervising ? staff.id : undefined,
         cosignedAt: isSupervising ? now : undefined,
         lockedAt: isSupervising && input.lockNote ? now : undefined,
         signatures: {
           create: {
-            signerId: userId,
+            signerId: staff.id,
             signatureType: isSupervising ? 'digital_cosign' : 'author_signature',
             ipAddress,
             signedAt: now,
@@ -314,6 +324,7 @@ export class ClinicalService {
    * Cosign SOAP Note (Supervising Provider Review Workflow).
    */
   static async cosignNote(noteId: string, input: SignSoapNoteInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
     if (!note) throw AppError.notFound('SOAP Note');
 
@@ -328,12 +339,12 @@ export class ClinicalService {
       where: { id: noteId },
       data: {
         status: finalStatus,
-        cosignedBy: userId,
+        cosignedBy: staff.id,
         cosignedAt: now,
         lockedAt: input.lockNote ? now : undefined,
         signatures: {
           create: {
-            signerId: userId,
+            signerId: staff.id,
             signatureType: 'digital_cosign',
             ipAddress,
             signedAt: now,
@@ -415,18 +426,19 @@ export class ClinicalService {
    * Append Addendum to Signed/Locked SOAP Note (Original note text is NEVER touched).
    */
   static async addAddendum(noteId: string, input: AddendumInput, userId: string, ipAddress: string) {
+    const staff = await ClinicalService.getStaffProfile(userId);
     const note = await prisma.soapNote.findFirst({ where: { id: noteId, deletedAt: null } });
     if (!note) throw AppError.notFound('SOAP Note');
 
     if (note.status !== 'signed' && note.status !== 'cosigned' && note.status !== 'locked') {
-      throw AppError.badRequest('Addendums can only be appended to signed, cosigned, or locked SOAP notes');
+      throw AppError.badRequest(`SOAP note #${noteId} is in '${note.status}' status. Addendums can only be appended to signed or locked notes.`);
     }
 
     const addendum = await prisma.noteAddendum.create({
       data: {
         noteId,
         patientId: note.patientId,
-        authorId: userId,
+        authorId: staff.id,
         requestedBy: 'patient',
         reason: input.reason,
         addendumText: input.addendumText,
