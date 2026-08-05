@@ -1,11 +1,22 @@
 // Radiantilyk EMR — Billing & Payments Controller
-// Express handlers for Invoices, Payments, Refunds, Credits, and NoShowCharges.
+// Express handlers for Checkout Transactions, Invoices, Payments, Refunds, Credits, and NoShowCharges.
 
 import { Request, Response, NextFunction } from 'express';
 import { BillingService } from '../services/billing.service';
 import { AuthenticatedRequest } from '../types';
 
 export class BillingController {
+  // ---- Checkout Transaction ----
+
+  static async checkoutTransaction(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const result = await BillingService.checkoutTransaction(req.body, userId, ip);
+      res.status(201).json({ success: true, data: result, message: 'Checkout transaction completed successfully' });
+    } catch (error) { next(error); }
+  }
+
   // ---- Invoices ----
 
   static async createInvoice(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {

@@ -1,17 +1,35 @@
 // Radiantilyk EMR — Billing & Payments Zod Schemas
-// Validation for Invoices, Payments, Refunds, PatientCredits, and NoShowCharges.
+// Validation for Invoices, Payments, Refunds, PatientCredits, NoShowCharges, and Checkout Transactions.
 // PCI-compliant: No raw card data or PHI in Stripe metadata.
 
 import { z } from 'zod';
+
+const PAYMENT_METHODS = [
+  'card',
+  'credit_card',
+  'debit_card',
+  'cash',
+  'check',
+  'stripe',
+  'patient_credit',
+  'package',
+  'gift_card',
+  'card_on_file',
+  'manual_card_intent',
+  'terminal',
+  'other',
+] as const;
 
 // ---- Invoice Schemas ----
 
 const InvoiceItemSchema = z.object({
   serviceId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
-  description: z.string().min(1).max(255).trim(),
+  description: z.string().min(1).max(255).trim().optional().default('Service Item'),
   unitPriceCents: z.number().int().min(0),
   quantity: z.number().int().min(1).default(1),
+  kind: z.string().optional(),
+  label: z.string().optional(),
 });
 
 export const CreateInvoiceSchema = z.object({
@@ -23,9 +41,29 @@ export const CreateInvoiceSchema = z.object({
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
 });
 
-// ---- Payment Schemas ----
+// ---- Checkout Transaction Schema ----
 
-const PAYMENT_METHODS = ['card', 'credit_card', 'debit_card', 'cash', 'check', 'stripe', 'patient_credit', 'package', 'gift_card', 'other'] as const;
+export const CheckoutTransactionSchema = z.object({
+  saleId: z.string().optional(),
+  patientId: z.string().uuid().optional(),
+  appointmentId: z.string().uuid().optional(),
+  clientFirstName: z.string().optional(),
+  clientLastName: z.string().optional(),
+  clientEmail: z.string().email().optional().or(z.literal('')),
+  clientPhone: z.string().optional(),
+  locationId: z.string().optional(),
+  items: z.array(InvoiceItemSchema).min(1, 'At least one line item required'),
+  discountCents: z.number().int().min(0).default(0),
+  discountAmountCents: z.number().int().min(0).optional(),
+  taxCents: z.number().int().min(0).default(0),
+  tipCents: z.number().int().min(0).default(0),
+  tipAmountCents: z.number().int().min(0).optional(),
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+  stripePaymentId: z.string().max(255).optional(),
+  status: z.string().optional(),
+});
+
+// ---- Payment Schemas ----
 
 export const RecordPaymentSchema = z.object({
   invoiceId: z.string().uuid().optional(),
@@ -67,6 +105,7 @@ export const CreateNoShowChargeSchema = z.object({
 // ---- Type Exports ----
 
 export type CreateInvoiceInput = z.infer<typeof CreateInvoiceSchema>;
+export type CheckoutTransactionInput = z.infer<typeof CheckoutTransactionSchema>;
 export type RecordPaymentInput = z.infer<typeof RecordPaymentSchema>;
 export type CreateRefundInput = z.infer<typeof CreateRefundSchema>;
 export type CreatePatientCreditInput = z.infer<typeof CreatePatientCreditSchema>;

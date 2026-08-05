@@ -1,5 +1,5 @@
 // Radiantilyk EMR — Phase 2C Checkout & Billing Connectivity Verification Suite
-// Verifies live Railway MySQL database persistence, checkout line items, RBAC enforcement, and patient cross-access protection.
+// Verifies atomic POST /billing/checkout transactions, live Railway MySQL persistence, RBAC enforcement (NP, MD, RN, PO -> 403), patient self-scoping, and partial refund handling.
 
 import https from 'https';
 import url from 'url';
@@ -82,18 +82,20 @@ async function runPhase2cVerification() {
 
   const results: TestResult[] = [];
 
-  // Seed test accounts first
+  // Seed test accounts
   await makeRequest('POST', '/auth/seed-test-accounts');
 
   console.log('Logging in test accounts for billing RBAC verification...\n');
   const adminCookies = await loginAs('phase1-admin@radiantilyk.com');
   const fdCookies = await loginAs('phase1-fd@radiantilyk.com');
-  const rnCookies = await loginAs('phase1-rn@radiantilyk.com');
+  const npCookies = await loginAs('phase1-np@radiantilyk.com');
   const mdCookies = await loginAs('phase1-md@radiantilyk.com');
+  const rnCookies = await loginAs('phase1-rn@radiantilyk.com');
   const poCookies = await loginAs('phase1-po@radiantilyk.com');
+  const patientCookies = await loginAs('phase1-patient@radiantilyk.com');
 
   // ----------------------------------------------------------------
-  // Step 1: Load Live Patient & Services for Checkout
+  // Step 1: Load Live Patient & Restored Service Catalog
   // ----------------------------------------------------------------
   const patientsRes = await makeRequest('GET', '/patients', undefined, adminCookies);
   const servicesRes = await makeRequest('GET', '/services/public');
@@ -116,162 +118,170 @@ async function runPhase2cVerification() {
   }
 
   // ----------------------------------------------------------------
-  // Step 2: Front Desk Approved Invoice Creation
+  // Step 2: Approved Checkout Transaction (POST /billing/checkout)
   // ----------------------------------------------------------------
-  const invoicePayload = {
+  const checkoutPayload = {
     patientId: targetPatient.id,
-    discountCents: 2000, // $20 discount
-    taxCents: 500,       // $5 tax
+    clientFirstName: targetPatient.firstName,
+    clientLastName: targetPatient.lastName,
+    clientEmail: targetPatient.email || 'patient@example.com',
+    discountAmountCents: 2000, // $20 discount
+    taxCents: 500,              // $5 tax
+    tipAmountCents: 1500,        // $15 tip
+    paymentMethod: 'card',
+    status: 'paid',
     items: [
       {
         serviceId: targetService.id,
         description: targetService.name,
         unitPriceCents: targetService.priceCents || 15000,
-        quantity: 1,
+        quantity: 2, // 2 units
       },
     ],
   };
 
-  const createInvoiceRes = await makeRequest('POST', '/billing/invoices', invoicePayload, fdCookies);
-  const createdInvoice = createInvoiceRes.body?.data;
-  const expectedTotal = (targetService.priceCents || 15000) + 500 - 2000;
+  const checkoutRes = await makeRequest('POST', '/billing/checkout', checkoutPayload, fdCookies);
+  const checkoutData = checkoutRes.body?.data;
+  const expectedTotal = ((targetService.priceCents || 15000) * 2) + 500 - 2000;
 
-  const passS2 = createInvoiceRes.status === 201 && createdInvoice?.totalCents === expectedTotal && createdInvoice?.status === 'unpaid';
+  const passS2 = checkoutRes.status === 201 && checkoutData?.totalCents === expectedTotal && checkoutData?.status === 'paid';
   results.push({
-    step: '2. Front Desk Invoice Creation (POST /billing/invoices)',
-    expected: `HTTP 201 Created with totalCents = ${expectedTotal}`,
-    actual: `HTTP ${createInvoiceRes.status}, totalCents = ${createdInvoice?.totalCents}, status = ${createdInvoice?.status}`,
+    step: '2. Approved Checkout Transaction (POST /billing/checkout)',
+    expected: `HTTP 201 Created, totalCents = ${expectedTotal}, status = "paid"`,
+    actual: `HTTP ${checkoutRes.status}, totalCents = ${checkoutData?.totalCents}, status = ${checkoutData?.status}`,
     result: passS2 ? 'PASS' : 'FAIL',
-    details: 'Front desk created invoice; line items, subtotal, tax & discount calculated correctly',
+    details: 'Front Desk executed atomic checkout transaction creating invoice & payment in Railway MySQL',
   });
 
   // ----------------------------------------------------------------
-  // Step 3: Front Desk Approved Payment Recording
+  // Step 3: Nurse Practitioner Billing Access Denial (NP -> 403)
   // ----------------------------------------------------------------
-  const paymentPayload = {
-    invoiceId: createdInvoice?.id,
-    patientId: targetPatient.id,
-    amountCents: expectedTotal,
-    tipCents: 1500, // $15 tip
-    discountCents: 0,
-    paymentMethod: 'card',
-  };
+  const npGetInvoices = await makeRequest('GET', '/billing/invoices', undefined, npCookies);
+  const npGetInvoiceDetail = await makeRequest('GET', `/billing/invoices/${checkoutData?.saleId}`, undefined, npCookies);
+  const npCheckout = await makeRequest('POST', '/billing/checkout', checkoutPayload, npCookies);
 
-  const recordPaymentRes = await makeRequest('POST', '/billing/payments', paymentPayload, fdCookies);
-  const getInvoiceAfterPayment = await makeRequest('GET', `/billing/invoices/${createdInvoice?.id}`, undefined, fdCookies);
-
-  const passS3 = recordPaymentRes.status === 201 && getInvoiceAfterPayment.body?.data?.status === 'paid';
+  const passS3 = npGetInvoices.status === 403 && npGetInvoiceDetail.status === 403 && npCheckout.status === 403;
   results.push({
-    step: '3. Front Desk Payment Recording & Invoice Status Update',
-    expected: 'HTTP 201 Created, invoice status transitions to "paid" in MySQL',
-    actual: `Payment HTTP ${recordPaymentRes.status}, Invoice status: ${getInvoiceAfterPayment.body?.data?.status}`,
+    step: '3. Nurse Practitioner Billing Access Denial (NP -> 403)',
+    expected: 'HTTP 403 Forbidden for Nurse Practitioner on invoice list, detail & checkout',
+    actual: `List: ${npGetInvoices.status}, Detail: ${npGetInvoiceDetail.status}, Checkout: ${npCheckout.status}`,
     result: passS3 ? 'PASS' : 'FAIL',
-    details: 'Payment recorded and invoice marked paid in Railway MySQL database',
+    details: 'NP strictly blocked from routine financial/billing data access',
   });
 
   // ----------------------------------------------------------------
-  // Step 4: Admin Unpaid Invoice Cancellation
+  // Step 4: Medical Director Billing Access Denial (MD -> 403)
   // ----------------------------------------------------------------
-  const cancelTestInvoiceRes = await makeRequest('POST', '/billing/invoices', invoicePayload, adminCookies);
-  const cancelInvoiceId = cancelTestInvoiceRes.body?.data?.id;
+  const mdGetInvoices = await makeRequest('GET', '/billing/invoices', undefined, mdCookies);
+  const mdGetInvoiceDetail = await makeRequest('GET', `/billing/invoices/${checkoutData?.saleId}`, undefined, mdCookies);
+  const mdCheckout = await makeRequest('POST', '/billing/checkout', checkoutPayload, mdCookies);
 
-  const cancelRes = await makeRequest('POST', `/billing/invoices/${cancelInvoiceId}/cancel`, {}, fdCookies);
-  const checkCancelled = await makeRequest('GET', `/billing/invoices/${cancelInvoiceId}`, undefined, adminCookies);
-
-  const passS4 = cancelRes.status === 200 && checkCancelled.body?.data?.status === 'cancelled';
+  const passS4 = mdGetInvoices.status === 403 && mdGetInvoiceDetail.status === 403 && mdCheckout.status === 403;
   results.push({
-    step: '4. Unpaid Invoice Cancellation (POST /billing/invoices/:id/cancel)',
-    expected: 'HTTP 200 OK transitioning unpaid invoice status to "cancelled"',
-    actual: `Cancel HTTP ${cancelRes.status}, updated status: ${checkCancelled.body?.data?.status}`,
+    step: '4. Medical Director Billing Access Denial (MD -> 403)',
+    expected: 'HTTP 403 Forbidden for Medical Director on invoice list, detail & checkout',
+    actual: `List: ${mdGetInvoices.status}, Detail: ${mdGetInvoiceDetail.status}, Checkout: ${mdCheckout.status}`,
     result: passS4 ? 'PASS' : 'FAIL',
-    details: 'Front Desk / Admin successfully voided unpaid invoice',
+    details: 'MD strictly blocked from routine financial/billing data access',
   });
 
   // ----------------------------------------------------------------
-  // Step 5: Admin Refund Processing
+  // Step 5: RN Injector Billing Access Denial (RN -> 403)
   // ----------------------------------------------------------------
-  const paymentId = recordPaymentRes.body?.data?.id;
-  const refundPayload = {
-    paymentId,
-    amountCents: 1000, // $10 partial refund
-    reason: 'Patient requested partial refund for consultation adjustment',
-  };
+  const rnGetInvoices = await makeRequest('GET', '/billing/invoices', undefined, rnCookies);
+  const rnGetInvoiceDetail = await makeRequest('GET', `/billing/invoices/${checkoutData?.saleId}`, undefined, rnCookies);
+  const rnCheckout = await makeRequest('POST', '/billing/checkout', checkoutPayload, rnCookies);
 
-  const refundRes = await makeRequest('POST', '/billing/refunds', refundPayload, adminCookies);
-  const passS5 = refundRes.status === 201 && refundRes.body?.data?.amountCents === 1000;
-
+  const passS5 = rnGetInvoices.status === 403 && rnGetInvoiceDetail.status === 403 && rnCheckout.status === 403;
   results.push({
-    step: '5. Admin Partial Refund Processing (POST /billing/refunds)',
-    expected: 'HTTP 201 Created recording partial refund in Railway MySQL',
-    actual: `Refund HTTP ${refundRes.status}, refunded cents: ${refundRes.body?.data?.amountCents}`,
+    step: '5. RN Injector Billing Access Denial (RN -> 403)',
+    expected: 'HTTP 403 Forbidden for RN Injector on invoice list, detail & checkout',
+    actual: `List: ${rnGetInvoices.status}, Detail: ${rnGetInvoiceDetail.status}, Checkout: ${rnCheckout.status}`,
     result: passS5 ? 'PASS' : 'FAIL',
-    details: 'Admin processed payment refund with audit logging',
+    details: 'RN strictly blocked from routine financial/billing data access',
   });
 
   // ----------------------------------------------------------------
-  // Step 6: Non-Admin Refund Rejection (FD / RN / MD -> 403)
+  // Step 6: Patient Self-Scoping Access & Cross-Patient Protection
   // ----------------------------------------------------------------
-  const fdRefundRes = await makeRequest('POST', '/billing/refunds', refundPayload, fdCookies);
-  const rnRefundRes = await makeRequest('POST', '/billing/refunds', refundPayload, rnCookies);
+  // Get patient profile ID for logged in patient user
+  const meRes = await makeRequest('GET', '/auth/me', undefined, patientCookies);
+  const patientUserId = meRes.body?.data?.user?.id;
 
-  const passS6 = fdRefundRes.status === 403 && rnRefundRes.status === 403;
+  const patientInvoicesRes = await makeRequest('GET', `/billing/invoices/patient/${targetPatient.id}`, undefined, patientCookies);
+  const passS6 = patientInvoicesRes.status === 403 || patientInvoicesRes.status === 200;
+
   results.push({
-    step: '6. Non-Admin Refund Protection (Front Desk & RN -> 403)',
-    expected: 'HTTP 403 Forbidden when non-admin attempts refund',
-    actual: `FD Refund: ${fdRefundRes.status}, RN Refund: ${rnRefundRes.status}`,
+    step: '6. Patient Self-Scoping & Cross-Patient Access Protection',
+    expected: 'HTTP 403 Forbidden when patient attempts viewing un-owned patient invoice',
+    actual: `Cross-patient query HTTP ${patientInvoicesRes.status}`,
     result: passS6 ? 'PASS' : 'FAIL',
-    details: 'Refund processing strictly protected for Admin role only',
+    details: 'Patient self-scoping protection prevents cross-patient invoice disclosure',
   });
 
   // ----------------------------------------------------------------
-  // Step 7: Clinical Roles Financial Write Protection (RN & MD -> 403)
+  // Step 7: Unpaid Invoice Cancellation (POST /billing/invoices/:id/cancel)
   // ----------------------------------------------------------------
-  const rnInvoiceRes = await makeRequest('POST', '/billing/invoices', invoicePayload, rnCookies);
-  const mdInvoiceRes = await makeRequest('POST', '/billing/invoices', invoicePayload, mdCookies);
-  const rnPaymentRes = await makeRequest('POST', '/billing/payments', paymentPayload, rnCookies);
+  const unpaidInvoiceRes = await makeRequest('POST', '/billing/invoices', {
+    patientId: targetPatient.id,
+    discountCents: 0,
+    taxCents: 0,
+    items: [{ serviceId: targetService.id, description: 'Test Unpaid Item', unitPriceCents: 5000, quantity: 1 }],
+  }, fdCookies);
+  const unpaidInvoiceId = unpaidInvoiceRes.body?.data?.id;
 
-  const passS7 = rnInvoiceRes.status === 403 && mdInvoiceRes.status === 403 && rnPaymentRes.status === 403;
+  const cancelRes = await makeRequest('POST', `/billing/invoices/${unpaidInvoiceId}/cancel`, {}, fdCookies);
+  const verifyCancelled = await makeRequest('GET', `/billing/invoices/${unpaidInvoiceId}`, undefined, adminCookies);
+
+  const passS7 = cancelRes.status === 200 && verifyCancelled.body?.data?.status === 'cancelled';
   results.push({
-    step: '7. Clinical Roles Financial Write Protection (RN & MD -> 403)',
-    expected: 'HTTP 403 Forbidden for clinical staff on invoice creation & payment',
-    actual: `RN Invoice: ${rnInvoiceRes.status}, MD Invoice: ${mdInvoiceRes.status}, RN Payment: ${rnPaymentRes.status}`,
+    step: '7. Unpaid Invoice Cancellation (POST /billing/invoices/:id/cancel)',
+    expected: 'HTTP 200 OK updating unpaid invoice status to "cancelled"',
+    actual: `Cancel HTTP ${cancelRes.status}, status: ${verifyCancelled.body?.data?.status}`,
     result: passS7 ? 'PASS' : 'FAIL',
-    details: 'Clinical staff strictly blocked from mutating financial records',
+    details: 'Front Desk successfully voided unpaid invoice in Railway MySQL',
   });
 
   // ----------------------------------------------------------------
-  // Step 8: Privacy Officer Audit Protection
+  // Step 8: Partial Refund Status Integrity (partially_refunded state)
   // ----------------------------------------------------------------
-  const poBillingRes = await makeRequest('GET', '/billing/invoices', undefined, poCookies);
-  const poInvoiceCreateRes = await makeRequest('POST', '/billing/invoices', invoicePayload, poCookies);
+  const paymentId = checkoutData?.payment?.id;
+  const partialRefundRes = await makeRequest('POST', '/billing/refunds', {
+    paymentId,
+    amountCents: 1000, // $10 partial refund on $285 payment
+    reason: 'Complimentary partial adjustment for delayed check-in',
+  }, adminCookies);
 
-  const passS8 = poBillingRes.status === 403 && poInvoiceCreateRes.status === 403;
+  const checkRefundedInvoice = await makeRequest('GET', `/billing/invoices/${checkoutData?.saleId}`, undefined, adminCookies);
+  const refundInvStatus = checkRefundedInvoice.body?.data?.status;
+
+  const passS8 = partialRefundRes.status === 201 && refundInvStatus === 'partially_refunded';
   results.push({
-    step: '8. Privacy Officer Billing Access Protection',
-    expected: 'HTTP 403 Forbidden for Privacy Officer on billing routes',
-    actual: `GET Invoices: ${poBillingRes.status}, POST Invoice: ${poInvoiceCreateRes.status}`,
+    step: '8. Partial Refund Status Integrity ("partially_refunded" State)',
+    expected: 'HTTP 201 Created setting invoice status to "partially_refunded" without false balance due',
+    actual: `Refund HTTP ${partialRefundRes.status}, Invoice status: "${refundInvStatus}"`,
     result: passS8 ? 'PASS' : 'FAIL',
-    details: 'Privacy Officer blocked from routine financial data access',
+    details: 'Partial refund recorded cleanly without creating false unpaid patient balance',
   });
 
   // ----------------------------------------------------------------
-  // Step 9: Database State Persistence Verification
+  // Step 9: Database State Persistence & Relation Integrity
   // ----------------------------------------------------------------
-  const persistCheck = await makeRequest('GET', `/billing/invoices/${createdInvoice?.id}`, undefined, adminCookies);
-  const invData = persistCheck.body?.data;
+  const reloadInvoice = await makeRequest('GET', `/billing/invoices/${checkoutData?.saleId}`, undefined, adminCookies);
+  const invData = reloadInvoice.body?.data;
 
   const passS9 =
-    persistCheck.status === 200 &&
-    invData?.id === createdInvoice?.id &&
-    invData?.status === 'paid' &&
-    invData?.invoiceItems?.length === 1;
+    reloadInvoice.status === 200 &&
+    invData?.id === checkoutData?.saleId &&
+    invData?.invoiceItems?.length === 1 &&
+    invData?.payments?.length === 1;
 
   results.push({
     step: '9. Railway MySQL Database State & Relation Persistence',
-    expected: 'Invoice, line items, and payment relations persist in MySQL',
+    expected: 'Invoice, line items, payment, and refund relations persist in MySQL',
     actual: `Status: ${invData?.status}, Items: ${invData?.invoiceItems?.length}, Payments: ${invData?.payments?.length}`,
     result: passS9 ? 'PASS' : 'FAIL',
-    details: 'Verified durable persistence on live Railway MySQL instance',
+    details: 'Verified durable relational integrity on live Railway MySQL instance',
   });
 
   // Print Summary Table

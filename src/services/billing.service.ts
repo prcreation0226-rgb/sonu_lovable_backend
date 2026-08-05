@@ -1,5 +1,5 @@
 // Radiantilyk EMR — Billing & Payments Service
-// Business logic for Invoices, Payments, Refunds, PatientCredits, and NoShowCharges.
+// Business logic for Invoices, Payments, Refunds, PatientCredits, NoShowCharges, and POS Checkout Transactions.
 //
 // PCI Compliance:
 // 1. No raw card data stored — only Stripe payment/refund IDs
@@ -17,9 +17,161 @@ import {
   CreateRefundInput,
   CreatePatientCreditInput,
   CreateNoShowChargeInput,
+  CheckoutTransactionInput,
 } from '../schemas/billing.schema';
 
 export class BillingService {
+  // ==========================================
+  // ---- CHECKOUT TRANSACTION ----
+  // ==========================================
+
+  static async checkoutTransaction(input: CheckoutTransactionInput, userId: string, ipAddress: string) {
+    const staffProfile = await prisma.staffProfile.findFirst({ where: { userId } });
+    const processorId = staffProfile?.id;
+
+    let patientId = input.patientId;
+
+    // Resolve patient from appointment if provided
+    if (!patientId && input.appointmentId) {
+      const appt = await prisma.appointment.findUnique({ where: { id: input.appointmentId } });
+      if (appt) patientId = appt.patientId;
+    }
+
+    // Resolve or create walk-in patient profile
+    if (!patientId) {
+      if (input.clientEmail) {
+        const existing = await prisma.patientProfile.findFirst({
+          where: { email: input.clientEmail, deletedAt: null },
+        });
+        if (existing) patientId = existing.id;
+      }
+
+      if (!patientId) {
+        const email = input.clientEmail || `walkin-${Date.now()}@radiantilyk.local`;
+        const firstName = input.clientFirstName || 'Walk-In';
+        const lastName = input.clientLastName || 'Client';
+
+        const user = await prisma.user.create({
+          data: {
+            email,
+            passwordHash: 'WALK_IN_NOPASS',
+            isActive: true,
+            userRoles: {
+              create: {
+                role: { connect: { name: 'patient' } },
+              },
+            },
+          },
+        });
+
+        const newPatient = await prisma.patientProfile.create({
+          data: {
+            userId: user.id,
+            firstName,
+            lastName,
+            email,
+            phone: input.clientPhone || undefined,
+          },
+        });
+        patientId = newPatient.id;
+      }
+    }
+
+    const discountCents = input.discountAmountCents ?? input.discountCents ?? 0;
+    const tipCents = input.tipAmountCents ?? input.tipCents ?? 0;
+    const taxCents = input.taxCents ?? 0;
+
+    const items = input.items.map((item) => ({
+      serviceId: item.serviceId || undefined,
+      productId: item.productId || undefined,
+      description: item.description || item.label || 'Service/Item',
+      unitPriceCents: item.unitPriceCents,
+      quantity: item.quantity,
+      totalCents: item.unitPriceCents * item.quantity,
+    }));
+
+    const subtotalCents = items.reduce((sum, item) => sum + item.totalCents, 0);
+    const totalCents = Math.max(0, subtotalCents + taxCents - discountCents);
+
+    const paymentMethod = input.paymentMethod || 'card';
+    const isPaid = input.status === 'paid' || !!paymentMethod;
+    const invoiceStatus = isPaid ? 'paid' : 'unpaid';
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create Invoice & InvoiceItems
+      const invoice = await tx.invoice.create({
+        data: {
+          patientId: patientId!,
+          appointmentId: input.appointmentId || undefined,
+          subtotalCents,
+          discountCents,
+          taxCents,
+          totalCents,
+          status: invoiceStatus,
+          invoiceItems: {
+            create: items,
+          },
+        },
+        include: {
+          invoiceItems: true,
+          patient: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+      });
+
+      // 2. Record Payment if payment method provided
+      let payment = null;
+      if (paymentMethod && processorId) {
+        payment = await tx.payment.create({
+          data: {
+            invoiceId: invoice.id,
+            patientId: patientId!,
+            appointmentId: input.appointmentId || undefined,
+            amountCents: totalCents,
+            tipCents,
+            discountCents,
+            paymentMethod,
+            stripePaymentId: input.stripePaymentId || undefined,
+            status: 'completed',
+            processedBy: processorId,
+          },
+        });
+      }
+
+      // 3. Transition Appointment status to COMPLETED if linked
+      if (input.appointmentId) {
+        await tx.appointment.update({
+          where: { id: input.appointmentId },
+          data: { status: 'COMPLETED' },
+        });
+      }
+
+      return { invoice, payment };
+    });
+
+    await writeAuditLog({
+      userId,
+      patientId,
+      action: 'CHECKOUT_COMPLETED',
+      resourceType: 'invoice',
+      resourceId: result.invoice.id,
+      ipAddress,
+      newValue: { totalCents, paymentMethod, appointmentId: input.appointmentId },
+    });
+
+    return {
+      saleId: result.invoice.id,
+      id: result.invoice.id,
+      invoice: result.invoice,
+      payment: result.payment,
+      status: invoiceStatus,
+      subtotalCents,
+      discountCents,
+      taxCents,
+      totalCents,
+      amountDueCents: invoiceStatus === 'paid' ? 0 : totalCents,
+    };
+  }
+
   // ==========================================
   // ---- INVOICES ----
   // ==========================================
@@ -28,11 +180,8 @@ export class BillingService {
     const patient = await prisma.patientProfile.findFirst({ where: { id: input.patientId, deletedAt: null } });
     if (!patient) throw AppError.notFound('Patient');
 
-    // Calculate totals from items (prices locked at creation time)
     const subtotalCents = input.items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
-    const totalCents = subtotalCents + input.taxCents - input.discountCents;
-
-    if (totalCents < 0) throw AppError.badRequest('Invoice total cannot be negative');
+    const totalCents = Math.max(0, subtotalCents + input.taxCents - input.discountCents);
 
     const invoice = await prisma.invoice.create({
       data: {
@@ -186,7 +335,6 @@ export class BillingService {
     const patient = await prisma.patientProfile.findFirst({ where: { id: input.patientId, deletedAt: null } });
     if (!patient) throw AppError.notFound('Patient');
 
-    // If linked to an invoice, validate and update invoice status
     let invoice = null;
     if (input.invoiceId) {
       invoice = await prisma.invoice.findFirst({ where: { id: input.invoiceId, deletedAt: null } });
@@ -211,7 +359,6 @@ export class BillingService {
       },
     });
 
-    // Update invoice status if linked
     if (invoice) {
       const totalPaid = await prisma.payment.aggregate({
         where: { invoiceId: invoice.id, status: 'completed' },
@@ -251,7 +398,6 @@ export class BillingService {
     const payment = await prisma.payment.findUnique({ where: { id: input.paymentId } });
     if (!payment) throw AppError.notFound('Payment');
 
-    // Validate refund amount doesn't exceed payment
     const existingRefunds = await prisma.refund.aggregate({
       where: { paymentId: input.paymentId },
       _sum: { amountCents: true },
@@ -283,7 +429,7 @@ export class BillingService {
       }),
     ]);
 
-    // If payment was linked to an invoice, recalculate net paid and update invoice status
+    // Recalculate invoice status without creating false balance due
     if (payment.invoiceId) {
       const inv = await prisma.invoice.findUnique({ where: { id: payment.invoiceId } });
       if (inv) {
@@ -295,8 +441,21 @@ export class BillingService {
           where: { payment: { invoiceId: inv.id } },
           _sum: { amountCents: true },
         });
-        const netPaid = (totalPaid._sum.amountCents || 0) - (totalRefundedAgg._sum.amountCents || 0);
-        const newStatus = netPaid >= inv.totalCents ? 'paid' : netPaid > 0 ? 'partial' : 'unpaid';
+        const sumPaid = totalPaid._sum.amountCents || 0;
+        const sumRefunded = totalRefundedAgg._sum.amountCents || 0;
+
+        let newStatus: string;
+        if (sumRefunded >= sumPaid && sumPaid > 0) {
+          newStatus = 'refunded';
+        } else if (sumRefunded > 0) {
+          newStatus = 'partially_refunded';
+        } else if (sumPaid >= inv.totalCents) {
+          newStatus = 'paid';
+        } else if (sumPaid > 0) {
+          newStatus = 'partial';
+        } else {
+          newStatus = 'unpaid';
+        }
 
         await prisma.invoice.update({
           where: { id: inv.id },
@@ -356,7 +515,7 @@ export class BillingService {
     return prisma.patientCredit.findMany({
       where: {
         patientId,
-        usedAt: null, // Only unused credits
+        usedAt: null,
         OR: [
           { expiresAt: null },
           { expiresAt: { gt: new Date() } },
@@ -376,7 +535,6 @@ export class BillingService {
     const appointment = await prisma.appointment.findUnique({ where: { id: input.appointmentId } });
     if (!appointment) throw AppError.notFound('Appointment');
 
-    // Check if no-show charge already exists for this appointment
     const existing = await prisma.noShowCharge.findUnique({ where: { appointmentId: input.appointmentId } });
     if (existing) throw AppError.conflict('No-show charge already exists for this appointment');
 
