@@ -284,13 +284,25 @@ export class AuthController {
    * POST /api/v1/auth/seed-test-accounts
    * Seeds dedicated Phase 1C test accounts in live database.
    */
-  static async seedTestAccounts(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async seedTestAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const seeded = await AuthService.seedTestAccounts();
+      const { action, email, minutes } = req.body || {};
+      let data: any;
+
+      if (action === 'age-session') {
+        data = await AuthService.ageUserSession(email, minutes || 15);
+      } else if (action === 'legacy-count') {
+        data = await AuthService.getLegacyColumnCount();
+      } else if (action === 'cleanup') {
+        data = await AuthService.cleanupTestAccounts();
+      } else {
+        data = await AuthService.seedTestAccounts();
+      }
+
       res.status(200).json({
         success: true,
-        data: seeded,
-        message: 'Phase 1C test accounts seeded successfully',
+        data,
+        message: 'Phase 1C test account action completed successfully',
       });
     } catch (error) {
       next(error);

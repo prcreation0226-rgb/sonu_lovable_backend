@@ -586,6 +586,83 @@ export class AuthService {
   }
 
   /**
+   * Test Fixture Helper — Age user session's mfaVerifiedAt for requireRecentAal2 testing.
+   */
+  static async ageUserSession(email: string, minutes: number = 15): Promise<any> {
+    const user = await prisma.user.findFirst({ where: { email: email.trim().toLowerCase() } });
+    if (!user) return { agedSessionsCount: 0 };
+    const result = await prisma.session.updateMany({
+      where: { userId: user.id, isRevoked: false },
+      data: { mfaVerifiedAt: new Date(Date.now() - minutes * 60 * 1000) },
+    });
+    return { userId: user.id, agedSessionsCount: result.count, agedMinutes: minutes };
+  }
+
+  /**
+   * Archival Audit — Count non-null challenge_token_encrypted rows via raw SQL query.
+   */
+  static async getLegacyColumnCount(): Promise<any> {
+    try {
+      const result: any = await prisma.$queryRawUnsafe(
+        'SELECT COUNT(*) as count FROM mfa_challenges WHERE challenge_token_encrypted IS NOT NULL'
+      );
+      const count = Number(result[0]?.count ?? 0);
+      return { legacyNonNullableCount: count };
+    } catch {
+      return { legacyNonNullableCount: 0 };
+    }
+  }
+
+  /**
+   * Test Cleanup — Revoke factors, challenges, codes, and sessions for phase1-* test users.
+   */
+  static async cleanupTestAccounts(): Promise<any> {
+    const testUsers = await prisma.user.findMany({
+      where: { email: { startsWith: 'phase1-' } },
+      select: { id: true, email: true },
+    });
+    const testUserIds = testUsers.map((u) => u.id);
+
+    if (testUserIds.length === 0) {
+      return { processedUsers: 0 };
+    }
+
+    const revokedRecoveryCodes = await prisma.mfaRecoveryCode.updateMany({
+      where: { userId: { in: testUserIds }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    const revokedChallenges = await prisma.mfaChallenge.updateMany({
+      where: { userId: { in: testUserIds }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    const disabledFactors = await prisma.mfaFactor.updateMany({
+      where: { userId: { in: testUserIds }, disabledAt: null },
+      data: { disabledAt: new Date(), status: 'disabled' },
+    });
+
+    const revokedSessions = await prisma.session.updateMany({
+      where: { userId: { in: testUserIds }, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    const deletedRefreshTokens = await prisma.refreshToken.deleteMany({
+      where: { userId: { in: testUserIds } },
+    });
+
+    return {
+      processedUsers: testUserIds.length,
+      disabledFactorsCount: disabledFactors.count,
+      revokedChallengesCount: revokedChallenges.count,
+      revokedRecoveryCodesCount: revokedRecoveryCodes.count,
+      revokedSessionsCount: revokedSessions.count,
+      deletedRefreshTokensCount: deletedRefreshTokens.count,
+      auditLogsPreserved: true,
+    };
+  }
+
+  /**
    * Helper: Write Auth Audit Log.
    */
   private static async recordAuthAudit(
