@@ -824,6 +824,18 @@ export class AuthService {
       });
     }
 
+    // Pre-fetch/create roles map
+    const existingRoles = await prisma.role.findMany();
+    const roleMap = new Map<string, string>(existingRoles.map((r) => [r.name, r.id]));
+
+    const allRoleNames = Array.from(new Set(accounts.flatMap((a) => a.roles)));
+    for (const rName of allRoleNames) {
+      if (!roleMap.has(rName)) {
+        const createdRole = await prisma.role.create({ data: { name: rName, description: `${rName} role` } });
+        roleMap.set(rName, createdRole.id);
+      }
+    }
+
     const results: any[] = [];
 
     for (const acc of accounts) {
@@ -852,16 +864,12 @@ export class AuthService {
 
       await prisma.userRole.deleteMany({ where: { userId: user.id } });
 
-      for (const roleName of acc.roles) {
-        let role = await prisma.role.findUnique({ where: { name: roleName } });
-        if (!role) {
-          role = await prisma.role.create({ data: { name: roleName, description: `${roleName} role` } });
-        }
+      const userRolesData = acc.roles.map((roleName) => ({
+        userId: user.id,
+        roleId: roleMap.get(roleName)!,
+      }));
 
-        await prisma.userRole.create({
-          data: { userId: user.id, roleId: role.id },
-        });
-      }
+      await prisma.userRole.createMany({ data: userRolesData });
 
       results.push({ email: acc.email, userId: user.id, roles: acc.roles, isActive: acc.isActive, isDeleted: !!acc.deletedAt });
     }
