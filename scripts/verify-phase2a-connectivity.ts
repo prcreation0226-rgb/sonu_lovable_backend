@@ -268,42 +268,52 @@ async function runPhase2aVerification() {
   });
 
   // ----------------------------------------------------------------
-  // Test 7: Appointment Reschedule (Admin Permitted)
+  // Test 7: Appointment Cancellation (Admin Permitted) — Run BEFORE reschedule
   // ----------------------------------------------------------------
-  console.log('9. Test 7: Rescheduling appointment...');
-  const rescheduleStartAt = new Date(Date.now() + 86400000 + 7200000).toISOString();
-  const rescheduleRes = await makeRequest(
-    'POST',
-    `/appointments/${apptId}/reschedule`,
-    { startAt: rescheduleStartAt, reason: 'Patient requested time change' },
-    adminCookies
-  );
-  const passT7 = rescheduleRes.status === 200;
-  results.push({
-    step: '7. Appointment Reschedule',
-    expected: 'HTTP 200 OK',
-    actual: `HTTP ${rescheduleRes.status}`,
-    result: passT7 ? 'PASS' : 'FAIL',
-    details: `Rescheduled status: ${rescheduleRes.body.data?.status}`,
-  });
-
-  // ----------------------------------------------------------------
-  // Test 8: Appointment Cancellation (Admin Permitted)
-  // ----------------------------------------------------------------
-  console.log('10. Test 8: Cancelling appointment...');
+  console.log('9. Test 7: Cancelling appointment...');
   const cancelRes = await makeRequest(
     'POST',
     `/appointments/${apptId}/cancel`,
-    { reason: 'Phase 2A test cleanup' },
+    { cancellationReason: 'Phase 2A test cleanup' },
     adminCookies
   );
-  const passT8 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
+  const passT7 = cancelRes.status === 200 && cancelRes.body.data?.status === 'CANCELLED';
   results.push({
-    step: '8. Appointment Cancellation',
+    step: '7. Appointment Cancellation',
     expected: 'HTTP 200 OK with CANCELLED status',
     actual: `HTTP ${cancelRes.status}`,
-    result: passT8 ? 'PASS' : 'FAIL',
+    result: passT7 ? 'PASS' : 'FAIL',
     details: `Cancelled status: ${cancelRes.body.data?.status}`,
+  });
+
+  // ----------------------------------------------------------------
+  // Test 8: Appointment Reschedule — create a second appointment to reschedule
+  // ----------------------------------------------------------------
+  console.log('10. Test 8: Rescheduling a new appointment...');
+  const startAt2 = new Date(Date.now() + 172800000).toISOString(); // Day after tomorrow
+  const endAt2 = new Date(Date.now() + 172800000 + 3600000).toISOString();
+  const createAppt2Res = await makeRequest(
+    'POST',
+    '/appointments',
+    { patientId, staffId, locationId, serviceIds: [serviceId], startAt: startAt2, endAt: endAt2 },
+    adminCookies
+  );
+  const appt2Id = createAppt2Res.body.data?.id;
+
+  const rescheduleStartAt = new Date(Date.now() + 172800000 + 7200000).toISOString();
+  const rescheduleRes = await makeRequest(
+    'POST',
+    `/appointments/${appt2Id}/reschedule`,
+    { startAt: rescheduleStartAt, reason: 'Patient requested time change' },
+    adminCookies
+  );
+  const passT8 = rescheduleRes.status === 200;
+  results.push({
+    step: '8. Appointment Reschedule',
+    expected: 'HTTP 200 OK',
+    actual: `HTTP ${rescheduleRes.status}`,
+    result: passT8 ? 'PASS' : 'FAIL',
+    details: `Rescheduled status: ${rescheduleRes.body.data?.status}`,
   });
 
   // Print Summary Table
