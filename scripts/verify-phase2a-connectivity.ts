@@ -232,8 +232,9 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   // Test 5: Admin Appointment Creation -> ALLOWED
   // ----------------------------------------------------------------
-  const adminStartAt = new Date(Date.now() + 86400000 * 15).toISOString();
-  const adminEndAt = new Date(Date.now() + 86400000 * 15 + 3600000).toISOString();
+  const randomOffsetMs = 86400000 * (20 + Math.floor(Math.random() * 50));
+  const adminStartAt = new Date(Date.now() + randomOffsetMs).toISOString();
+  const adminEndAt = new Date(Date.now() + randomOffsetMs + 3600000).toISOString();
   const adminApptRes = await makeRequest(
     'POST',
     '/appointments',
@@ -361,7 +362,7 @@ async function runPhase2aVerification() {
   // ----------------------------------------------------------------
   // Test 12: Appointment Reschedule (Admin) -> ALLOWED
   // ----------------------------------------------------------------
-  const rescheduleStartAt = new Date(Date.now() + 86400000 * 15 + 7200000).toISOString();
+  const rescheduleStartAt = new Date(Date.now() + randomOffsetMs + 7200000).toISOString();
   const rescheduleRes = await makeRequest(
     'POST',
     `/appointments/${adminApptId}/reschedule`,
