@@ -190,20 +190,22 @@ export class AuthService {
     // 4. Check MFA Requirement (Enforcement flag & Active factor check)
     const isRequiredRole = roles.some((r) => (env.MFA_REQUIRED_ROLES as readonly string[]).includes(r));
     const mustEnforceMfa = env.MFA_ENFORCEMENT_ENABLED && isRequiredRole;
-    const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active' } })) > 0;
+    const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active', disabledAt: null } })) > 0;
 
     if (mustEnforceMfa || hasActiveMfa) {
-      const challenge = await MfaService.createChallenge(user.id);
-      await this.recordAuthAudit(user.id, email, 'MFA_ENROLL_STARTED', ipAddress, userAgent, {
+      const scope = hasActiveMfa ? 'MFA_LOGIN' : 'MFA_ENROLLMENT';
+      const challenge = await MfaService.createChallenge(user.id, scope);
+      await this.recordAuthAudit(user.id, cleanEmail, 'MFA_ENROLL_STARTED', ipAddress, userAgent, {
         mustEnforceMfa,
         hasActiveMfa,
         enrollmentRequired: !hasActiveMfa,
+        scope,
       });
 
       return {
         mfaRequired: true,
         enrollmentRequired: !hasActiveMfa,
-        challengeToken: challenge.challengeToken,
+        challengeToken: challenge.rawChallengeToken, // Passed to controller ONLY to set rka_mfa_pending cookie
       };
     }
 
@@ -531,6 +533,7 @@ export class AuthService {
         userId,
         token: `pending_${Date.now()}_${Math.random()}`,
         aal,
+        mfaVerifiedAt: aal === 'aal2' ? new Date() : null,
         ipAddress,
         userAgent: userAgent.substring(0, 500),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
@@ -579,6 +582,83 @@ export class AuthService {
       accessToken,
       refreshToken,
       expiresIn: '15m',
+    };
+  }
+
+  /**
+   * Test Fixture Helper — Age user session's mfaVerifiedAt for requireRecentAal2 testing.
+   */
+  static async ageUserSession(email: string, minutes: number = 15): Promise<any> {
+    const user = await prisma.user.findFirst({ where: { email: email.trim().toLowerCase() } });
+    if (!user) return { agedSessionsCount: 0 };
+    const result = await prisma.session.updateMany({
+      where: { userId: user.id, isRevoked: false },
+      data: { mfaVerifiedAt: new Date(Date.now() - minutes * 60 * 1000) },
+    });
+    return { userId: user.id, agedSessionsCount: result.count, agedMinutes: minutes };
+  }
+
+  /**
+   * Archival Audit — Count non-null challenge_token_encrypted rows via raw SQL query.
+   */
+  static async getLegacyColumnCount(): Promise<any> {
+    try {
+      const result: any = await prisma.$queryRawUnsafe(
+        'SELECT COUNT(*) as count FROM mfa_challenges WHERE challenge_token_encrypted IS NOT NULL'
+      );
+      const count = Number(result[0]?.count ?? 0);
+      return { legacyNonNullableCount: count };
+    } catch {
+      return { legacyNonNullableCount: 0 };
+    }
+  }
+
+  /**
+   * Test Cleanup — Revoke factors, challenges, codes, and sessions for phase1-* test users.
+   */
+  static async cleanupTestAccounts(): Promise<any> {
+    const testUsers = await prisma.user.findMany({
+      where: { email: { startsWith: 'phase1-' } },
+      select: { id: true, email: true },
+    });
+    const testUserIds = testUsers.map((u) => u.id);
+
+    if (testUserIds.length === 0) {
+      return { processedUsers: 0 };
+    }
+
+    const revokedRecoveryCodes = await prisma.mfaRecoveryCode.updateMany({
+      where: { userId: { in: testUserIds }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    const revokedChallenges = await prisma.mfaChallenge.updateMany({
+      where: { userId: { in: testUserIds }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    const disabledFactors = await prisma.mfaFactor.updateMany({
+      where: { userId: { in: testUserIds }, disabledAt: null },
+      data: { disabledAt: new Date(), status: 'disabled' },
+    });
+
+    const revokedSessions = await prisma.session.updateMany({
+      where: { userId: { in: testUserIds }, isRevoked: false },
+      data: { isRevoked: true },
+    });
+
+    const deletedRefreshTokens = await prisma.refreshToken.deleteMany({
+      where: { userId: { in: testUserIds } },
+    });
+
+    return {
+      processedUsers: testUserIds.length,
+      disabledFactorsCount: disabledFactors.count,
+      revokedChallengesCount: revokedChallenges.count,
+      revokedRecoveryCodesCount: revokedRecoveryCodes.count,
+      revokedSessionsCount: revokedSessions.count,
+      deletedRefreshTokensCount: deletedRefreshTokens.count,
+      auditLogsPreserved: true,
     };
   }
 
@@ -777,19 +857,27 @@ export class AuthService {
    * Seed dedicated Phase 1C test accounts directly in live MySQL database.
    */
   static async seedTestAccounts(): Promise<any> {
+    const demoPasswordHash = await bcrypt.hash('12345678', 10);
     const passwordHash = await bcrypt.hash('Phase1Test!2026', 10);
 
     const accounts = [
-      { email: 'phase1-admin@radiantilyk.com', roles: ['admin'], isActive: true, deletedAt: null },
-      { email: 'phase1-fd@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: null },
-      { email: 'phase1-np@radiantilyk.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null },
-      { email: 'phase1-rn@radiantilyk.com', roles: ['rn_injector'], isActive: true, deletedAt: null },
-      { email: 'phase1-md@radiantilyk.com', roles: ['medical_director'], isActive: true, deletedAt: null },
-      { email: 'phase1-po@radiantilyk.com', roles: ['privacy_officer'], isActive: true, deletedAt: null },
-      { email: 'phase1-patient@radiantilyk.com', roles: ['patient'], isActive: true, deletedAt: null },
-      { email: 'phase1-multi@radiantilyk.com', roles: ['admin', 'medical_director'], isActive: true, deletedAt: null },
-      { email: 'phase1-inactive@radiantilyk.com', roles: ['front_desk'], isActive: false, deletedAt: null },
-      { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date() },
+      { email: 'admin@gmail.com', roles: ['admin'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'medicaldirector@gmail.com', roles: ['medical_director'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'securityofficer@gmail.com', roles: ['privacy_officer'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'nurseprectitioner@gmail.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'injector@gmail.com', roles: ['rn_injector'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'scheduler@gmail.com', roles: ['front_desk'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'user@gmail.com', roles: ['patient'], isActive: true, deletedAt: null, password: demoPasswordHash },
+      { email: 'phase1-admin@radiantilyk.com', roles: ['admin'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-fd@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-np@radiantilyk.com', roles: ['nurse_practitioner'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-rn@radiantilyk.com', roles: ['rn_injector'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-md@radiantilyk.com', roles: ['medical_director'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-po@radiantilyk.com', roles: ['privacy_officer'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-patient@radiantilyk.com', roles: ['patient'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-multi@radiantilyk.com', roles: ['admin', 'medical_director'], isActive: true, deletedAt: null, password: passwordHash },
+      { email: 'phase1-inactive@radiantilyk.com', roles: ['front_desk'], isActive: false, deletedAt: null, password: passwordHash },
+      { email: 'phase1-deleted@radiantilyk.com', roles: ['front_desk'], isActive: true, deletedAt: new Date(), password: passwordHash },
     ];
 
     const existingUsers = await prisma.user.findMany({
@@ -799,9 +887,9 @@ export class AuthService {
     const existingUserIds = existingUsers.map((u) => u.id);
 
     if (existingUserIds.length > 0) {
+      await prisma.mfaRecoveryCode.deleteMany({ where: { userId: { in: existingUserIds } } });
       await prisma.mfaChallenge.deleteMany({ where: { userId: { in: existingUserIds } } });
       await prisma.mfaFactor.deleteMany({ where: { userId: { in: existingUserIds } } });
-      await prisma.mfaRecoveryCode.deleteMany({ where: { userId: { in: existingUserIds } } });
       await prisma.user.updateMany({
         where: { id: { in: existingUserIds } },
         data: {
@@ -813,6 +901,18 @@ export class AuthService {
       });
     }
 
+    // Pre-fetch/create roles map
+    const existingRoles = await prisma.role.findMany();
+    const roleMap = new Map<string, string>(existingRoles.map((r) => [r.name, r.id]));
+
+    const allRoleNames = Array.from(new Set(accounts.flatMap((a) => a.roles)));
+    for (const rName of allRoleNames) {
+      if (!roleMap.has(rName)) {
+        const createdRole = await prisma.role.create({ data: { name: rName, description: `${rName} role` } });
+        roleMap.set(rName, createdRole.id);
+      }
+    }
+
     const results: any[] = [];
 
     for (const acc of accounts) {
@@ -821,7 +921,7 @@ export class AuthService {
         user = await prisma.user.create({
           data: {
             email: acc.email,
-            passwordHash,
+            passwordHash: acc.password,
             isActive: acc.isActive,
             deletedAt: acc.deletedAt,
           },
@@ -830,7 +930,7 @@ export class AuthService {
         user = await prisma.user.update({
           where: { id: user.id },
           data: {
-            passwordHash,
+            passwordHash: acc.password,
             isActive: acc.isActive,
             deletedAt: acc.deletedAt,
             failedAttempts: 0,
@@ -841,16 +941,12 @@ export class AuthService {
 
       await prisma.userRole.deleteMany({ where: { userId: user.id } });
 
-      for (const roleName of acc.roles) {
-        let role = await prisma.role.findUnique({ where: { name: roleName } });
-        if (!role) {
-          role = await prisma.role.create({ data: { name: roleName, description: `${roleName} role` } });
-        }
+      const userRolesData = acc.roles.map((roleName) => ({
+        userId: user.id,
+        roleId: roleMap.get(roleName)!,
+      }));
 
-        await prisma.userRole.create({
-          data: { userId: user.id, roleId: role.id },
-        });
-      }
+      await prisma.userRole.createMany({ data: userRolesData });
 
       results.push({ email: acc.email, userId: user.id, roles: acc.roles, isActive: acc.isActive, isDeleted: !!acc.deletedAt });
     }

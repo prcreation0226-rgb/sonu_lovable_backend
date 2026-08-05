@@ -101,26 +101,25 @@ export function extractRefreshToken(req: { cookies?: Record<string, string> }): 
 
 const MFA_PENDING_COOKIE = 'rka_mfa_pending';
 const MFA_PENDING_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+const MFA_PENDING_PATH = '/api/v1/auth/mfa';
 
-export function setMfaPendingCookie(res: Response, challengeToken: string): void {
+function mfaPendingCookieOptions(maxAge?: number): CookieOptions {
   const isProd = env.IS_PRODUCTION;
-  res.cookie(MFA_PENDING_COOKIE, challengeToken, {
+  return {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? 'none' : 'lax',
-    path: '/',
-    maxAge: MFA_PENDING_MAX_AGE_MS,
-  });
+    sameSite: isProd ? ('none' as const) : ('lax' as const),
+    path: MFA_PENDING_PATH,
+    ...(maxAge !== undefined ? { maxAge } : {}),
+  };
+}
+
+export function setMfaPendingCookie(res: Response, challengeToken: string): void {
+  res.cookie(MFA_PENDING_COOKIE, challengeToken, mfaPendingCookieOptions(MFA_PENDING_MAX_AGE_MS));
 }
 
 export function clearMfaPendingCookie(res: Response): void {
-  const isProd = env.IS_PRODUCTION;
-  res.clearCookie(MFA_PENDING_COOKIE, {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'none' : 'lax',
-    path: '/',
-  });
+  res.clearCookie(MFA_PENDING_COOKIE, mfaPendingCookieOptions());
 }
 
 export function extractMfaPendingToken(req: { cookies?: Record<string, string>; body?: { mfaToken?: string } }): string | null {

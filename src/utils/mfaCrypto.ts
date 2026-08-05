@@ -10,7 +10,7 @@ function getDerivedKey(): Buffer {
 }
 
 /**
- * AES-256-GCM Encryption for MFA Secrets & Challenge Tokens
+ * AES-256-GCM Encryption for TOTP Secrets
  */
 export function encryptMfaSecret(plaintext: string): string {
   const key = getDerivedKey();
@@ -21,12 +21,12 @@ export function encryptMfaSecret(plaintext: string): string {
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag().toString('hex');
   
-  // Format: iv.authTag.encrypted
+  // Format: iv:authTag:encrypted
   return `${iv.toString('hex')}:${authTag}:${encrypted}`;
 }
 
 /**
- * AES-256-GCM Decryption for MFA Secrets & Challenge Tokens
+ * AES-256-GCM Decryption for TOTP Secrets
  */
 export function decryptMfaSecret(ciphertext: string): string {
   const parts = ciphertext.split(':');
@@ -47,19 +47,44 @@ export function decryptMfaSecret(ciphertext: string): string {
 }
 
 /**
- * Hash recovery code or sensitive token using SHA-256
+ * HMAC-SHA256 hash for recovery codes using dedicated MFA_RECOVERY_HMAC_SECRET.
+ * Input is sanitized (whitespace/dash stripped, uppercased) before hashing.
  */
 export function hashRecoveryCode(code: string): string {
   const sanitized = code.replace(/[\s-]/g, '').toUpperCase();
-  return crypto.createHash('sha256').update(sanitized).digest('hex');
+  return crypto
+    .createHmac('sha256', env.MFA_RECOVERY_HMAC_SECRET)
+    .update(sanitized)
+    .digest('hex');
 }
 
 /**
- * Compare plain recovery code against SHA-256 hash
+ * Constant-time comparison of plain recovery code against HMAC-SHA256 hash.
  */
 export function verifyRecoveryCodeHash(plainCode: string, codeHash: string): boolean {
   const computedHash = hashRecoveryCode(plainCode);
+  if (computedHash.length !== codeHash.length) return false;
   return crypto.timingSafeEqual(Buffer.from(computedHash), Buffer.from(codeHash));
+}
+
+/**
+ * HMAC-SHA256 hash for pending MFA challenge tokens using dedicated MFA_CHALLENGE_HMAC_SECRET.
+ * The raw token is placed ONLY in the HttpOnly cookie. MySQL stores only this hash.
+ */
+export function hashChallengeToken(rawToken: string): string {
+  return crypto
+    .createHmac('sha256', env.MFA_CHALLENGE_HMAC_SECRET)
+    .update(rawToken)
+    .digest('hex');
+}
+
+/**
+ * Verify a raw challenge token against its stored HMAC-SHA256 hash (constant-time).
+ */
+export function verifyChallengeTokenHash(rawToken: string, storedHash: string): boolean {
+  const computedHash = hashChallengeToken(rawToken);
+  if (computedHash.length !== storedHash.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(computedHash), Buffer.from(storedHash));
 }
 
 /**
@@ -76,7 +101,7 @@ export function generateRecoveryCodes(count = 10): string[] {
 }
 
 /**
- * Generate secure random challenge token
+ * Generate secure random opaque challenge token (64 hex chars = 32 bytes entropy)
  */
 export function generateChallengeToken(): string {
   return crypto.randomBytes(32).toString('hex');

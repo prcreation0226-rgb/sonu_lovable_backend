@@ -112,10 +112,8 @@ import billingRouter from './routes/billing.routes';
 import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 import availabilityRouter from './routes/availability.routes';
-import { MfaService } from './services/mfa.service';
 
-// Initialize MFA Schema idempotently
-MfaService.ensureMfaTablesExist();
+
 
 const apiRouters: [string, any][] = [
   ['/auth/mfa', mfaRouter],
