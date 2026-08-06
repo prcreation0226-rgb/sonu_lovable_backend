@@ -105,6 +105,7 @@ if (env.API_PREFIX !== '/api') {
 
 // ---- API Routes ----
 import authRouter from './routes/auth.routes';
+import passwordResetRouter from './routes/password-reset.routes';
 import mfaRouter from './routes/mfa.routes';
 import userRouter, { roleRouter } from './routes/user.routes';
 import staffRouter from './routes/staff.routes';
@@ -125,6 +126,7 @@ import serviceRouter from './routes/service.routes';
 const apiRouters: [string, any][] = [
   ['/auth/mfa', mfaRouter],
   ['/admin', mfaRouter],
+  ['/auth', passwordResetRouter],
   ['/auth', authRouter],
   ['/users', userRouter],
   ['/roles', roleRouter],
