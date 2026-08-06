@@ -97,9 +97,9 @@ export const env = {
     'MFA_REQUIRED_ROLES',
     'admin,nurse_practitioner,medical_director,rn_injector,privacy_officer'
   ).split(',').map((r) => r.trim()).filter(Boolean),
-  MFA_ENCRYPTION_KEY: optionalEnv('MFA_ENCRYPTION_KEY', optionalEnv('ENCRYPTION_KEY', 'default-radiantilyk-mfa-secret-key-32b')),
-  MFA_RECOVERY_HMAC_SECRET: optionalEnv('MFA_RECOVERY_HMAC_SECRET', 'default-radiantilyk-recovery-hmac-secret'),
-  MFA_CHALLENGE_HMAC_SECRET: optionalEnv('MFA_CHALLENGE_HMAC_SECRET', 'default-radiantilyk-challenge-hmac-secret'),
+  MFA_ENCRYPTION_KEY: requireEnv('MFA_ENCRYPTION_KEY'),
+  MFA_RECOVERY_HMAC_SECRET: requireEnv('MFA_RECOVERY_HMAC_SECRET'),
+  MFA_CHALLENGE_HMAC_SECRET: requireEnv('MFA_CHALLENGE_HMAC_SECRET'),
 
   // Logging
   LOG_LEVEL: optionalEnv('LOG_LEVEL', 'debug'),

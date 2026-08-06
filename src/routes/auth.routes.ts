@@ -45,19 +45,7 @@ router.post('/refresh', AuthController.refreshToken);
  */
 router.post('/refresh-token', AuthController.refreshToken);
 
-/**
- * @route   POST /api/v1/auth/verify-phase1a
- * @desc    Run Phase 1A Live MySQL Auth Audit Verification Suite
- * @access  Public
- */
-router.post('/verify-phase1a', AuthController.verifyPhase1a);
 
-/**
- * @route   POST /api/v1/auth/seed-test-accounts
- * @desc    Seed dedicated Phase 1C test accounts in live database
- * @access  Public
- */
-router.post('/seed-test-accounts', AuthController.seedTestAccounts);
 
 // ---- Protected Routes (Requires JWT Access Token) ----
 
