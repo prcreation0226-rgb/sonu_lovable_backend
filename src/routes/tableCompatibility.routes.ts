@@ -11,6 +11,10 @@ import { BillingService } from '../services/billing.service';
 import { AppointmentService } from '../services/appointment.service';
 import { LIVE_SERVICE_CATEGORIES, LIVE_SERVICES } from '../data/fullCatalogData';
 
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
+import { env } from '../config/env';
+
 const router = Router();
 
 export const globalModelApplications: any[] = [];
@@ -24,6 +28,160 @@ export const globalVendors: any[] = [
 ];
 
 /**
+ * Explicit Handlers for Staff Invite Verification and Activation
+ */
+const handleStaffInviteVerify = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const rawToken = req.body?.token || req.body?.body?.token;
+
+    if (!rawToken || typeof rawToken !== 'string' || rawToken.trim() === '') {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL_001',
+          message: 'Invitation token is required',
+        },
+      });
+      return;
+    }
+
+    const token = rawToken.trim();
+
+    // Standard cryptographic JWT verification for signed invitation tokens
+    try {
+      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as any;
+
+      if (decoded && decoded.type === 'staff_invite' && decoded.email) {
+        const existingUser = await prisma.user.findFirst({
+          where: { email: decoded.email, deletedAt: null },
+        });
+
+        if (existingUser && existingUser.isActive && existingUser.passwordHash !== 'PENDING_ACTIVATION') {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVITE_USED',
+              message: 'This invitation link has already been used',
+            },
+          });
+          return;
+        }
+
+        res.status(200).json({
+          success: true,
+          data: {
+            valid: true,
+            email: decoded.email,
+            staffName: decoded.staffName || decoded.fullName || '',
+            role: decoded.role || 'staff',
+          },
+        });
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === 'TokenExpiredError') {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVITE_EXPIRED',
+            message: 'This invitation link is invalid or has expired',
+          },
+        });
+        return;
+      }
+    }
+
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVITE_INVALID',
+        message: 'This invitation link is invalid or has expired',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const handleStaffInviteAccept = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const rawToken = req.body?.token || req.body?.body?.token;
+    const password = req.body?.password || req.body?.body?.password;
+
+    if (!rawToken || typeof rawToken !== 'string' || rawToken.trim() === '') {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VAL_001', message: 'Invitation token is required' },
+      });
+      return;
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VAL_002', message: 'Password must be at least 8 characters long' },
+      });
+      return;
+    }
+
+    const token = rawToken.trim();
+
+    try {
+      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as any;
+
+      if (decoded && decoded.type === 'staff_invite' && decoded.email) {
+        const existingUser = await prisma.user.findFirst({
+          where: { email: decoded.email, deletedAt: null },
+        });
+
+        if (existingUser && existingUser.isActive && existingUser.passwordHash !== 'PENDING_ACTIVATION') {
+          res.status(400).json({
+            success: false,
+            error: { code: 'INVITE_USED', message: 'This invitation link has already been used' },
+          });
+          return;
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+
+        if (existingUser) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { passwordHash, isActive: true },
+          });
+        }
+
+        res.status(200).json({
+          success: true,
+          message: 'Account activated successfully',
+        });
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === 'TokenExpiredError') {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVITE_EXPIRED', message: 'This invitation link is invalid or has expired' },
+        });
+        return;
+      }
+    }
+
+    res.status(400).json({
+      success: false,
+      error: { code: 'INVITE_INVALID', message: 'This invitation link is invalid or has expired' },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+router.post('/staff-invite-verify', handleStaffInviteVerify);
+router.post('/v1/staff-invite-verify', handleStaffInviteVerify);
+router.post('/staff-invite-accept', handleStaffInviteAccept);
+router.post('/v1/staff-invite-accept', handleStaffInviteAccept);
+
+/**
  * Handle GET requests for legacy table endpoints (e.g. /api/breach_reports, /api/vendors)
  */
 router.get('/:tableName*', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -32,7 +190,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
     const rootModule = tableName.split('/')[0].split('?')[0];
 
     // Do not hijack core protected module endpoints with generic table fallback
-    const protectedModules = ['clinical', 'patient', 'patients', 'appointment', 'appointments', 'staff', 'compliance', 'auth', 'billing', 'inventory'];
+    const protectedModules = ['clinical', 'patient', 'patients', 'appointment', 'appointments', 'staff', 'compliance', 'auth', 'billing', 'inventory', 'staff-invite-verify', 'staff-invite-accept'];
     if (protectedModules.includes(rootModule)) {
       return next();
     }
