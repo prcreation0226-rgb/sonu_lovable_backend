@@ -12,6 +12,7 @@ import { AppointmentService } from '../services/appointment.service';
 import { LIVE_SERVICE_CATEGORIES, LIVE_SERVICES } from '../data/fullCatalogData';
 
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { env } from '../config/env';
 
 const router = Router();
@@ -46,43 +47,11 @@ const handleStaffInviteVerify = async (req: Request, res: Response, next: NextFu
 
     const token = rawToken.trim();
 
-    if (token === 'invalid-token' || token.startsWith('invalid-')) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVITE_INVALID',
-          message: 'This invitation link is invalid or has expired',
-        },
-      });
-      return;
-    }
-
-    if (token === 'expired-invite-token' || token.startsWith('expired-')) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVITE_EXPIRED',
-          message: 'This invitation link is invalid or has expired',
-        },
-      });
-      return;
-    }
-
-    if (token === 'used-invite-token' || token.startsWith('used-')) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVITE_USED',
-          message: 'This invitation link has already been used',
-        },
-      });
-      return;
-    }
-
-    // Standard JWT verification for signed invite tokens
+    // Standard cryptographic JWT verification for signed invitation tokens
     try {
       const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as any;
-      if (decoded && decoded.type === 'staff_invite') {
+
+      if (decoded && decoded.type === 'staff_invite' && decoded.email) {
         const existingUser = await prisma.user.findFirst({
           where: { email: decoded.email, deletedAt: null },
         });
@@ -103,7 +72,7 @@ const handleStaffInviteVerify = async (req: Request, res: Response, next: NextFu
           data: {
             valid: true,
             email: decoded.email,
-            staffName: decoded.staffName || decoded.fullName || 'Invited Staff',
+            staffName: decoded.staffName || decoded.fullName || '',
             role: decoded.role || 'staff',
           },
         });
@@ -120,19 +89,6 @@ const handleStaffInviteVerify = async (req: Request, res: Response, next: NextFu
         });
         return;
       }
-    }
-
-    if (token === 'valid-invite-token' || token.startsWith('valid-')) {
-      res.status(200).json({
-        success: true,
-        data: {
-          valid: true,
-          email: 'invited.staff@example.com',
-          staffName: 'Invited Staff',
-          role: 'rn_injector',
-        },
-      });
-      return;
     }
 
     res.status(400).json({
@@ -169,17 +125,51 @@ const handleStaffInviteAccept = async (req: Request, res: Response, next: NextFu
     }
 
     const token = rawToken.trim();
-    if (token === 'invalid-token' || token.startsWith('invalid-') || token.startsWith('expired-') || token.startsWith('used-')) {
-      res.status(400).json({
-        success: false,
-        error: { code: 'INVITE_INVALID', message: 'This invitation link is invalid, expired, or already used' },
-      });
-      return;
+
+    try {
+      const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as any;
+
+      if (decoded && decoded.type === 'staff_invite' && decoded.email) {
+        const existingUser = await prisma.user.findFirst({
+          where: { email: decoded.email, deletedAt: null },
+        });
+
+        if (existingUser && existingUser.isActive && existingUser.passwordHash !== 'PENDING_ACTIVATION') {
+          res.status(400).json({
+            success: false,
+            error: { code: 'INVITE_USED', message: 'This invitation link has already been used' },
+          });
+          return;
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+
+        if (existingUser) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { passwordHash, isActive: true },
+          });
+        }
+
+        res.status(200).json({
+          success: true,
+          message: 'Account activated successfully',
+        });
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === 'TokenExpiredError') {
+        res.status(400).json({
+          success: false,
+          error: { code: 'INVITE_EXPIRED', message: 'This invitation link is invalid or has expired' },
+        });
+        return;
+      }
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Account activated successfully',
+    res.status(400).json({
+      success: false,
+      error: { code: 'INVITE_INVALID', message: 'This invitation link is invalid or has expired' },
     });
   } catch (error) {
     next(error);
