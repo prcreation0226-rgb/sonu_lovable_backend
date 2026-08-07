@@ -14,7 +14,8 @@ export type UserRoleName =
   | 'rn_injector'
   | 'privacy_officer'
   | 'front_desk'
-  | 'patient';
+  | 'patient'
+  | 'patient_account_manager';
 
 /** Roles eligible to appear as bookable clinical providers */
 export const CLINICAL_PROVIDER_ROLES: UserRoleName[] = [
@@ -29,6 +30,7 @@ export interface AuthenticatedUser {
   email: string;
   roles: UserRoleName[];
   sessionId: string;
+  mustChangePassword?: boolean;
 }
 
 export interface AuthenticatedRequest extends Request {

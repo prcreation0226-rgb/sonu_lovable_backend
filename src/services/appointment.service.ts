@@ -7,6 +7,8 @@
 //    │           │               │
 //    └──► CANCELLED / NO_SHOW / RESCHEDULED
 
+import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { writeAuditLog } from '../middleware/audit';
@@ -419,59 +421,165 @@ export class AppointmentService {
 
   /**
    * Create Public Online Booking Request (Unauthenticated).
+   * Atomically persists Appointment, PatientProfile, and User account (if new).
    */
   static async createPublicBookingRequest(input: PublicBookingRequestInput, ipAddress: string) {
+    const cleanEmail = input.email.trim().toLowerCase();
+
     const service = await prisma.service.findFirst({ where: { id: input.serviceId, deletedAt: null } });
     if (!service) throw AppError.notFound('Service');
-
-    // Find or create patient record by email
-    let patient = await prisma.patientProfile.findFirst({ where: { email: input.email, deletedAt: null } });
-    if (!patient) {
-      patient = await prisma.patientProfile.create({
-        data: {
-          firstName: input.firstName,
-          lastName: input.lastName,
-          email: input.email,
-          phone: input.phone,
-          communicationPref: { create: { allowEmail: true, allowSms: true } },
-        },
-      });
-    }
 
     const startAt = new Date(input.startAt);
     const endAt = new Date(startAt.getTime() + service.durationMinutes * 60 * 1000);
     const bookingToken = `BKR-${uuidv4().substring(0, 8).toUpperCase()}`;
 
-    const appt = await prisma.appointment.create({
-      data: {
-        patientId: patient.id,
-        staffId: input.staffId,
-        locationId: input.locationId,
-        startAt,
-        endAt,
-        status: AppointmentStatus.PENDING,
-        source: AppointmentSource.ONLINE,
-        notes: input.notes,
-        bookingToken,
-        appointmentServices: {
-          create: [{
-            serviceId: service.id,
-            priceCents: service.priceCents,
-            durationMinutes: service.durationMinutes,
-          }],
-        },
-      },
-    });
+    let rawTempPassword: string | undefined = `RKA-${crypto.randomBytes(4).toString('hex')}-${crypto.randomBytes(4).toString('hex')}`;
+    const hashedPassword = await bcrypt.hash(rawTempPassword, 10);
+    let existingAccount = false;
 
-    return {
-      bookingToken,
-      appointmentId: appt.id,
-      patientName: `${patient.firstName} ${patient.lastName}`,
-      serviceName: service.name,
-      startAt,
-      endAt,
-      status: appt.status,
-    };
+    // Retry wrapper: if a concurrent request causes P2002 inside the transaction
+    // (which invalidates the MySQL/InnoDB transaction), retry once — on the second
+    // attempt the existing user/profile will be found by the initial queries.
+    const MAX_RETRIES = 2;
+    let lastError: any;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        // Reset mutable state on each attempt
+        existingAccount = false;
+        rawTempPassword = `RKA-${crypto.randomBytes(4).toString('hex')}-${crypto.randomBytes(4).toString('hex')}`;
+
+        const result = await prisma.$transaction(async (tx) => {
+          // 1. Find existing patient profile by normalized email
+          let patient = await tx.patientProfile.findFirst({
+            where: { email: cleanEmail, deletedAt: null },
+          });
+
+          // 2. Check if a User account exists for this email
+          const existingUser = await tx.user.findFirst({
+            where: { email: cleanEmail, deletedAt: null },
+          });
+
+          if (existingUser) {
+            existingAccount = true;
+            rawTempPassword = undefined;
+            // Ensure patient profile is linked to existing user
+            if (patient) {
+              if (!patient.userId) {
+                patient = await tx.patientProfile.update({
+                  where: { id: patient.id },
+                  data: { userId: existingUser.id },
+                });
+              }
+            } else {
+              patient = await tx.patientProfile.create({
+                data: {
+                  userId: existingUser.id,
+                  firstName: input.firstName,
+                  lastName: input.lastName,
+                  email: cleanEmail,
+                  phone: input.phone,
+                  communicationPref: { create: { allowEmail: true, allowSms: true } },
+                },
+              });
+            }
+          } else {
+            // No User exists — create new user with temporary password
+            existingAccount = false;
+
+            // Resolve patient role from DB (RBAC check)
+            const patientRole = await tx.role.findFirst({ where: { name: 'patient' } });
+            if (!patientRole) {
+              throw new AppError('Patient role is not configured in the system', 500);
+            }
+
+            // Create User with mustChangePassword = true
+            const newUser = await tx.user.create({
+              data: {
+                email: cleanEmail,
+                passwordHash: hashedPassword,
+                isActive: true,
+                mustChangePassword: true,
+              },
+            });
+
+            await tx.userRole.create({
+              data: {
+                userId: newUser.id,
+                roleId: patientRole.id,
+              },
+            });
+
+            // Link or create PatientProfile
+            if (patient) {
+              patient = await tx.patientProfile.update({
+                where: { id: patient.id },
+                data: { userId: newUser.id },
+              });
+            } else {
+              patient = await tx.patientProfile.create({
+                data: {
+                  userId: newUser.id,
+                  firstName: input.firstName,
+                  lastName: input.lastName,
+                  email: cleanEmail,
+                  phone: input.phone,
+                  communicationPref: { create: { allowEmail: true, allowSms: true } },
+                },
+              });
+            }
+          }
+
+          // 3. Create Appointment using real patientId (UUID)
+          const appt = await tx.appointment.create({
+            data: {
+              patient: { connect: { id: patient.id } },
+              location: { connect: { id: input.locationId } },
+              staff: { connect: { id: input.staffId } },
+              startAt,
+              endAt,
+              status: AppointmentStatus.PENDING,
+              source: AppointmentSource.ONLINE,
+              notes: input.notes,
+              bookingToken,
+              appointmentServices: {
+                create: [{
+                  serviceId: service.id,
+                  priceCents: service.priceCents,
+                  durationMinutes: service.durationMinutes,
+                }],
+              },
+            },
+          });
+
+          return { appt, patient };
+        }, { maxWait: 10000, timeout: 20000 });
+
+        return {
+          bookingToken,
+          appointmentId: result.appt.id,
+          patientName: `${result.patient.firstName} ${result.patient.lastName}`,
+          serviceName: service.name,
+          startAt,
+          endAt,
+          status: result.appt.status,
+          existingAccount,
+          ...(rawTempPassword ? { temporaryPassword: rawTempPassword } : {}),
+          email: cleanEmail,
+          patientId: result.patient.id,
+        };
+      } catch (err: any) {
+        lastError = err;
+        // P2002 = unique constraint violation (concurrent duplicate) — retry once
+        if (err?.code === 'P2002' && attempt < MAX_RETRIES) {
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    // Should never reach here, but satisfy TypeScript
+    throw lastError;
   }
 
   /**

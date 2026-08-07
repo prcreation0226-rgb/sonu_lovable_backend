@@ -536,4 +536,64 @@ export class PatientService {
         : `CMIA California Health & Safety Code §123145 requires 7-year record retention. Account is ${retentionYears.toFixed(1)} years old. Record retained until 7-year mark.`,
     };
   }
+
+  /**
+   * Resolve Patient Profile by User ID (strictly isolated to authenticated user).
+   */
+  static async getPatientProfileByUserId(userId: string) {
+    const profile = await prisma.patientProfile.findFirst({
+      where: { userId, deletedAt: null },
+      include: {
+        communicationPref: true,
+        demographics: true,
+      },
+    });
+
+    if (!profile) {
+      throw AppError.notFound('No patient profile linked to this user account');
+    }
+
+    return profile;
+  }
+
+  /**
+   * Get appointments for the authenticated patient.
+   */
+  static async getMyAppointments(userId: string) {
+    const profile = await this.getPatientProfileByUserId(userId);
+
+    const appointments = await prisma.appointment.findMany({
+      where: { patientId: profile.id, deletedAt: null },
+      include: {
+        appointmentServices: {
+          include: { service: true },
+        },
+        location: true,
+        staff: true,
+      },
+      orderBy: { startAt: 'desc' },
+    });
+
+    return appointments;
+  }
+
+  /**
+   * Get consent records for the authenticated patient.
+   */
+  static async getMyConsents(userId: string) {
+    const profile = await this.getPatientProfileByUserId(userId);
+
+    const consents = await prisma.consentAssignment.findMany({
+      where: { patientId: profile.id },
+      include: {
+        template: { select: { id: true, name: true, version: true } },
+        signatures: {
+          select: { id: true, signedAt: true, clientEmail: true, ipAddress: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return consents;
+  }
 }

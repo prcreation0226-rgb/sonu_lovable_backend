@@ -42,6 +42,7 @@ export interface LoginResult {
     id: string;
     email: string;
     roles: UserRoleName[];
+    mustChangePassword?: boolean;
   };
   tokens?: AuthTokens;
 }
@@ -227,7 +228,7 @@ export class AuthService {
 
     return {
       mfaRequired: false,
-      user: { id: user.id, email: user.email, roles },
+      user: { id: user.id, email: user.email, roles, mustChangePassword: user.mustChangePassword },
       tokens,
     };
   }
@@ -498,10 +499,10 @@ export class AuthService {
       },
     });
 
-    // Update password
+    // Update password and clear mustChangePassword flag atomically
     await prisma.user.update({
       where: { id: userId },
-      data: { passwordHash: newPasswordHash },
+      data: { passwordHash: newPasswordHash, mustChangePassword: false },
     });
 
     await this.recordAuthAudit(userId, user.email, 'PASSWORD_CHANGED', ipAddress, userAgent);

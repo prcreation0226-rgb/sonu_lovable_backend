@@ -221,4 +221,40 @@ export class PatientController {
       });
     } catch (error) { next(error); }
   }
+
+  static async getMe(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const profile = await PatientService.getPatientProfileByUserId(userId);
+
+      res.status(200).json({
+        success: true,
+        data: profile,
+      });
+    } catch (error) { next(error); }
+  }
+
+  static async getMyAppointments(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const appointments = await PatientService.getMyAppointments(userId);
+
+      res.status(200).json({
+        success: true,
+        data: appointments,
+      });
+    } catch (error) { next(error); }
+  }
+
+  static async getMyConsents(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const consents = await PatientService.getMyConsents(userId);
+
+      res.status(200).json({
+        success: true,
+        data: consents,
+      });
+    } catch (error) { next(error); }
+  }
 }

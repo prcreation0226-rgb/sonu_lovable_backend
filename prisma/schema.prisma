@@ -52,6 +52,7 @@ model User {
   email                 String      @unique @db.VarChar(255)
   passwordHash          String      @map("password_hash") @db.VarChar(255)
   isActive              Boolean     @default(true) @map("is_active")
+  mustChangePassword    Boolean     @default(false) @map("must_change_password")
   deletedAt             DateTime?   @map("deleted_at")
   mfaEnabled            Boolean     @default(false) @map("mfa_enabled")
   mfaSecret             String?     @map("mfa_secret") @db.VarChar(255) // Encrypted via AES-256-GCM
@@ -409,7 +410,7 @@ model PatientProfile {
   userId                  String?                 @unique @map("user_id") @db.Char(36)
   firstName               String                  @map("first_name") @db.VarChar(100)
   lastName                String                  @map("last_name") @db.VarChar(100)
-  email                   String                  @db.VarChar(255)
+  email                   String                  @unique @db.VarChar(255)
   phone                   String?                 @db.VarChar(20)
   dateOfBirth             DateTime?               @map("date_of_birth") @db.Date
   gender                  String?                 @db.VarChar(20)

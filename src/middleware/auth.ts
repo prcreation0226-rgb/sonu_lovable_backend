@@ -76,6 +76,7 @@ export async function authenticate(
         id: true,
         email: true,
         isActive: true,
+        mustChangePassword: true,
         deletedAt: true,
         userRoles: {
           select: {
@@ -119,9 +120,24 @@ export async function authenticate(
       email: dbUser.email,
       roles: liveRoles,
       sessionId: decoded.sessionId,
+      mustChangePassword: dbUser.mustChangePassword,
     };
 
     req.user = user;
+
+    // Server-Side mustChangePassword Enforcement
+    if (dbUser.mustChangePassword) {
+      const path = req.originalUrl || req.path;
+      const isAllowedEndpoint =
+        path.includes('/auth/me') ||
+        path.includes('/auth/password/change') ||
+        path.includes('/auth/logout');
+
+      if (!isAllowedEndpoint) {
+        throw new AppError('Password change required before accessing the portal', 403, ErrorCodes.FORBIDDEN);
+      }
+    }
+
     next();
   } catch (error) {
     if (error instanceof AppError) {

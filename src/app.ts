@@ -120,8 +120,7 @@ import complianceRouter from './routes/compliance.routes';
 import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 import availabilityRouter from './routes/availability.routes';
 import serviceRouter from './routes/service.routes';
-
-
+import patientAccountRouter from './routes/patientAccount.routes';
 
 const apiRouters: [string, any][] = [
   ['/auth/mfa', mfaRouter],
@@ -134,6 +133,8 @@ const apiRouters: [string, any][] = [
   ['/locations', locationRouter],
   ['/services', serviceRouter],
   ['/patients', patientRouter],
+  ['/patient', patientRouter],
+  ['/patient-accounts', patientAccountRouter],
   ['/appointments', appointmentRouter],
   ['/clinical', clinicalRouter],
   ['/consents', consentRouter],

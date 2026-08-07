@@ -56,6 +56,7 @@ export class AuthController {
         success: true,
         data: {
           user: result.user,
+          mustChangePassword: result.user?.mustChangePassword ?? false,
         },
         message: 'Login successful',
       };

@@ -65,6 +65,75 @@ export function requireRoles(...allowedRoles: UserRoleName[]) {
 }
 
 /**
+ * Require the authenticated user to have a role that holds the specified Permission code.
+ * Queries Permission -> RolePermission -> Role -> UserRole architecture.
+ */
+export function requirePermission(permissionCode: string) {
+  return async (req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        return next(new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID));
+      }
+
+      const userRoles = req.user.roles || [];
+
+      // Query DB for permission and linked roles
+      const dbPermission = await prisma.permission.findFirst({
+        where: { code: permissionCode },
+        include: {
+          rolePermissions: {
+            include: { role: true },
+          },
+        },
+      });
+
+      const allowedRoleNames = dbPermission && dbPermission.rolePermissions.length > 0
+        ? dbPermission.rolePermissions.map((rp) => rp.role.name)
+        : ['admin', 'patient_account_manager'];
+
+      const hasPermission = allowedRoleNames.some((r) => userRoles.includes(r as any));
+
+      if (!hasPermission) {
+        logSecurityEvent(
+          'FORBIDDEN_ENDPOINT_ACCESS',
+          'high',
+          req.clientIp || '0.0.0.0',
+          `User ${req.user.id} (roles: ${userRoles.join(',')}) missing required permission ${permissionCode} — ${req.method} ${req.originalUrl}`
+        );
+
+        prisma.authAuditLog.create({
+          data: {
+            userId: req.user.id,
+            email: req.user.email,
+            eventType: 'AUTHORIZATION_DENIED',
+            ipAddress: req.clientIp || '0.0.0.0',
+            userAgent: (req.headers['user-agent'] as string) || null,
+            metadata: {
+              method: req.method,
+              url: req.originalUrl,
+              userRoles,
+              requiredPermission: permissionCode,
+            },
+          },
+        }).catch(() => {});
+
+        return next(
+          new AppError(
+            'You do not have permission to access this resource',
+            403,
+            ErrorCodes.INSUFFICIENT_ROLE
+          )
+        );
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+/**
  * Require the user to have ALL of the specified roles (conjunction).
  */
 export function requireAllRoles(...requiredRoles: UserRoleName[]) {

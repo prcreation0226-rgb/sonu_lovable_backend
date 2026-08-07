@@ -31,6 +31,44 @@ const router = Router();
 // All patient endpoints require authentication
 router.use(authenticate);
 
+// ---- Patient Self-Service Portal Endpoints ----
+
+/**
+ * @route   GET /api/v1/patient/me (or /api/v1/patients/me)
+ * @desc    Get profile for authenticated patient
+ * @access  Patient ONLY
+ */
+router.get(
+  '/me',
+  requireRoles('patient'),
+  auditPhiAccess('patient_profile', 'view'),
+  PatientController.getMe
+);
+
+/**
+ * @route   GET /api/v1/patient/my-appointments (or /api/v1/patients/my-appointments)
+ * @desc    Get appointments for authenticated patient
+ * @access  Patient ONLY
+ */
+router.get(
+  '/my-appointments',
+  requireRoles('patient'),
+  auditPhiAccess('patient_profile', 'view'),
+  PatientController.getMyAppointments
+);
+
+/**
+ * @route   GET /api/v1/patient/my-consents (or /api/v1/patients/my-consents)
+ * @desc    Get consents for authenticated patient
+ * @access  Patient ONLY
+ */
+router.get(
+  '/my-consents',
+  requireRoles('patient'),
+  auditPhiAccess('consent_signature', 'view'),
+  PatientController.getMyConsents
+);
+
 // ---- Patient Profile Endpoints ----
 
 /**
