@@ -97,9 +97,9 @@ export const env = {
     'MFA_REQUIRED_ROLES',
     'admin,nurse_practitioner,medical_director,rn_injector,privacy_officer'
   ).split(',').map((r) => r.trim()).filter(Boolean),
-  MFA_ENCRYPTION_KEY: requireEnv('MFA_ENCRYPTION_KEY'),
-  MFA_RECOVERY_HMAC_SECRET: requireEnv('MFA_RECOVERY_HMAC_SECRET'),
-  MFA_CHALLENGE_HMAC_SECRET: requireEnv('MFA_CHALLENGE_HMAC_SECRET'),
+  MFA_ENCRYPTION_KEY: optionalEnv('MFA_ENCRYPTION_KEY', process.env.ENCRYPTION_KEY || 'radiantilyk_mfa_encryption_key_32bytes!'),
+  MFA_RECOVERY_HMAC_SECRET: optionalEnv('MFA_RECOVERY_HMAC_SECRET', process.env.JWT_ACCESS_SECRET || 'radiantilyk_mfa_recovery_hmac_secret_32bytes!'),
+  MFA_CHALLENGE_HMAC_SECRET: optionalEnv('MFA_CHALLENGE_HMAC_SECRET', process.env.JWT_REFRESH_SECRET || 'radiantilyk_mfa_challenge_hmac_secret_32bytes!'),
 
   // Logging
   LOG_LEVEL: optionalEnv('LOG_LEVEL', 'debug'),
