@@ -472,8 +472,20 @@ export class ClinicalService {
     };
 
     if (cosignerId) {
+      // Resolve user ID to staff profile ID to ensure correct lookup
+      const staffProfile = await prisma.staffProfile.findFirst({
+        where: {
+          OR: [
+            { userId: cosignerId },
+            { id: cosignerId },
+          ],
+          deletedAt: null,
+        },
+      });
+      const resolvedStaffId = staffProfile ? staffProfile.id : cosignerId;
+
       where.OR = [
-        { assignedToId: cosignerId },
+        { assignedToId: resolvedStaffId },
         { assignedToId: null },
       ];
     }
