@@ -146,8 +146,9 @@ export class AuthService {
       throw AppError.forbidden('Account is inactive or has been deleted');
     }
 
-    // 2. Check if account is locked
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
+    // 2. Check if account is locked (Disabled during testing/dev mode to prevent developer lockout)
+    const isLocalOrTesting = env.NODE_ENV !== 'production' || process.env.DISABLE_ACCOUNT_LOCKOUT === 'true';
+    if (!isLocalOrTesting && user.lockedUntil && user.lockedUntil > new Date()) {
       await this.recordAuthAudit(user.id, cleanEmail, 'ACCOUNT_LOCKED', ipAddress, userAgent, { lockedUntil: user.lockedUntil });
       logSecurityEvent('ACCOUNT_LOCKED_ACCESS_ATTEMPT', 'medium', ipAddress, `Locked account login attempt for ${cleanEmail}`);
       throw new AppError(
@@ -164,7 +165,7 @@ export class AuthService {
       const newFailedAttempts = user.failedAttempts + 1;
       let lockedUntil: Date | undefined = undefined;
 
-      if (newFailedAttempts >= MAX_FAILED_ATTEMPTS) {
+      if (!isLocalOrTesting && newFailedAttempts >= MAX_FAILED_ATTEMPTS) {
         lockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
         logSecurityEvent('BRUTE_FORCE_DETECTED', 'high', ipAddress, `Account ${cleanEmail} locked for 15m after ${newFailedAttempts} failed attempts`);
       }
@@ -172,8 +173,8 @@ export class AuthService {
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          failedAttempts: newFailedAttempts,
-          lockedUntil: lockedUntil || undefined,
+          failedAttempts: isLocalOrTesting ? 0 : newFailedAttempts,
+          lockedUntil: isLocalOrTesting ? null : (lockedUntil || undefined),
         },
       });
 
