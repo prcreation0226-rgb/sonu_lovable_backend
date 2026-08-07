@@ -340,6 +340,11 @@ export class StaffService {
       if (input.password && input.password !== '••••••••' && input.password.trim().length >= 6) {
         userUpdateData.passwordHash = await bcrypt.hash(input.password.trim(), 12);
       }
+      // Handle is_active / isActive status update
+      const isActiveValue = input.is_active !== undefined ? input.is_active : (input.isActive !== undefined ? input.isActive : undefined);
+      if (isActiveValue !== undefined) {
+        userUpdateData.isActive = isActiveValue;
+      }
       if (Object.keys(userUpdateData).length > 0) {
         await prisma.user.update({
           where: { id: existing.userId },
@@ -347,6 +352,7 @@ export class StaffService {
         });
       }
 
+      // Handle role update — accept roleName or role field
       const targetRole = input.roleName || input.role;
       if (targetRole) {
         let role = await prisma.role.findFirst({ where: { name: targetRole } });
@@ -360,10 +366,13 @@ export class StaffService {
           }
         }
         if (role) {
+          // Remove all existing roles for this user
           await prisma.userRole.deleteMany({ where: { userId: existing.userId } });
+          // Assign new primary role
           await prisma.userRole.create({
             data: { userId: existing.userId, roleId: role.id, grantedBy: adminUserId },
           });
+          // Also assign the generic 'staff' base role (unless already staff or admin)
           if (targetRole !== 'staff' && targetRole !== 'admin') {
             const staffRole = await prisma.role.findFirst({ where: { name: 'staff' } });
             if (staffRole && staffRole.id !== role.id) {
@@ -388,6 +397,7 @@ export class StaffService {
 
     return updated;
   }
+
 
   /**
    * Smart Delete Staff Profile AND linked User account.

@@ -44,7 +44,13 @@ export const CreateStaffProfileSchema = z.object({
   commissionPercent: z.number().min(0).max(100).optional().nullable(),
 });
 
-export const UpdateStaffProfileSchema = CreateStaffProfileSchema.partial().omit({ userId: true });
+export const UpdateStaffProfileSchema = CreateStaffProfileSchema.partial().omit({ userId: true }).extend({
+  roleName: z.string().min(1).optional(),
+  role: z.string().min(1).optional(),
+  password: z.string().min(6).optional(),
+  full_name: z.string().min(2).max(255).optional(),
+  is_active: z.boolean().optional(),
+});
 
 export const AssignStaffLocationSchema = z.object({
   locationId: z.string().uuid('Invalid location ID'),

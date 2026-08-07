@@ -74,11 +74,11 @@ router.get(
 /**
  * @route   POST /api/v1/patients
  * @desc    Create new Patient Profile
- * @access  Admin and Front Desk ONLY
+ * @access  All Staff Roles
  */
 router.post(
   '/',
-  requireRoles('admin', 'front_desk'),
+  requireRoles(...STAFF_ROLES),
   validate({ body: CreatePatientSchema }),
   auditPhiAccess('patient_profile', 'create'),
   PatientController.createPatient
@@ -111,11 +111,11 @@ router.get(
 /**
  * @route   PATCH /api/v1/patients/:id
  * @desc    Update Patient Profile details
- * @access  Admin and Front Desk ONLY
+ * @access  All Staff Roles
  */
 router.patch(
   '/:id',
-  requireRoles('admin', 'front_desk'),
+  requireRoles(...STAFF_ROLES),
   validate({ body: UpdatePatientSchema }),
   auditPhiAccess('patient_profile', 'update'),
   PatientController.updatePatient
