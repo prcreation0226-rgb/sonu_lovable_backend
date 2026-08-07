@@ -68,31 +68,18 @@ export class StaffController {
       const isAdmin = userRoles.includes('admin');
       const isPrivacyOfficer = userRoles.includes('privacy_officer');
 
-      const sanitizedStaff = (result.staff || []).map((s: any) => {
-        if (isAdmin) return s; // Full authorized management response
-
-        if (isPrivacyOfficer) {
-          // Privacy Officer: Minimum audit/compliance fields only
-          return {
-            id: s.id,
-            user_id: s.user_id || s.userId,
-            full_name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || s.fullName || s.name,
-            email: s.user?.email || s.email,
-            roles: s.user?.userRoles?.map((ur: any) => ur.role?.name) || s.roles,
-            is_active: s.user?.isActive ?? s.isActive,
-            created_at: s.createdAt || s.created_at,
-          };
-        }
-
-        // Provider oversight / Sanitized scheduling directory fields (Front Desk, NP, RN, MD)
-        return {
-          id: s.id,
-          full_name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || s.fullName || s.name,
-          title: s.title,
-          specialties: s.specialties,
-          is_active: s.user?.isActive ?? s.isActive,
-        };
-      });
+      const sanitizedStaff = (result.staff || []).map((s: any) => ({
+        id: s.id,
+        user_id: s.user_id || s.userId || s.user?.id,
+        full_name: s.fullName || [s.first_name, s.last_name].filter(Boolean).join(' ') || s.name || 'Staff Member',
+        fullName: s.fullName || [s.first_name, s.last_name].filter(Boolean).join(' ') || s.name || 'Staff Member',
+        title: s.title || 'Staff Member',
+        email: s.user?.email || s.email || '',
+        color: s.color || '#6366f1',
+        is_active: s.user?.isActive ?? s.isActive ?? true,
+        user: s.user,
+        created_at: s.createdAt || s.created_at,
+      }));
 
       const response: ApiResponse = {
         success: true,
