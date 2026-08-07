@@ -75,7 +75,10 @@ export class AuthService {
       });
 
       if (staffProfile) {
-        const passwordHash = await bcrypt.hash(password || '12345678', 12);
+        if (!password) {
+          throw AppError.badRequest('Password is required for staff account provisioning');
+        }
+        const passwordHash = await bcrypt.hash(password, 12);
         let staffRole = await prisma.role.findFirst({ where: { name: 'staff' } });
         if (!staffRole) {
           try {

@@ -85,7 +85,10 @@ export class StaffService {
       throw AppError.conflict(`An account with email "${cleanEmail}" already exists`);
     }
 
-    const passwordHash = await bcrypt.hash(input.password || '12345678', 12);
+    if (!input.password) {
+      throw AppError.badRequest('Password is required for staff account creation');
+    }
+    const passwordHash = await bcrypt.hash(input.password, 12);
 
     let role = await prisma.role.findFirst({ where: { name: input.roleName } });
     if (!role) {
