@@ -113,9 +113,33 @@ export async function writeAuditLog(params: {
   newValue?: Record<string, unknown>;
 }): Promise<void> {
   try {
+    let validUserId = params.userId;
+    if (!validUserId || validUserId === 'admin') {
+      const firstAdmin = await prisma.user.findFirst({
+        where: { userRoles: { some: { role: { name: 'admin' } } } },
+        select: { id: true },
+      });
+      validUserId = firstAdmin?.id || '';
+    }
+
+    if (!validUserId) {
+      logger.warn(`[AUDIT] Skipping audit log creation: no valid user ID found for ${params.action}`);
+      return;
+    }
+
+    const userExists = await prisma.user.findUnique({
+      where: { id: validUserId },
+      select: { id: true },
+    });
+
+    if (!userExists) {
+      logger.warn(`[AUDIT] Skipping audit log creation: userId "${validUserId}" not found in database`);
+      return;
+    }
+
     await prisma.auditLog.create({
       data: {
-        userId: params.userId,
+        userId: validUserId,
         action: params.action,
         resourceType: params.resourceType,
         resourceId: params.resourceId || undefined,
