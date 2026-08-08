@@ -141,10 +141,10 @@ export class AppointmentController {
     } catch (error) { next(error); }
   }
 
-  static async createWaitlistEntry(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  static async createWaitlistEntry(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.user!.id;
-      const ip = (req.clientIp || '0.0.0.0') as string;
+      const userId = (req as any).user?.id || null;
+      const ip = ((req as any).clientIp || '0.0.0.0') as string;
 
       const entry = await AppointmentService.createWaitlistEntry(req.body, userId, ip);
 

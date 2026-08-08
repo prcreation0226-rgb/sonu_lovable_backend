@@ -52,7 +52,11 @@ export const StaffTimeOffSchema = z.object({
 });
 
 export const WaitlistSchema = z.object({
-  patientId: z.string().uuid('Invalid patient ID'),
+  patientId: z.string().uuid('Invalid patient ID').optional().nullable(),
+  firstName: z.string().min(1, 'First name is required').optional().nullable(),
+  lastName: z.string().min(1, 'Last name is required').optional().nullable(),
+  email: z.string().email('Invalid email').optional().nullable(),
+  phone: z.string().optional().nullable(),
   serviceId: z.string().uuid('Invalid service ID').optional().nullable(),
   locationId: z.string().uuid('Invalid location ID').optional().nullable(),
   preferredDays: z.string().max(100).optional().nullable(),

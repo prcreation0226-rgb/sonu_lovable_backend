@@ -722,6 +722,32 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    // Waitlist Entries
+    if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      const entries = await prisma.waitlistEntry.findMany({
+        include: {
+          patient: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      const mapped = entries.map(e => ({
+        id: e.id,
+        patient_id: e.patientId,
+        service_id: e.serviceId,
+        location_id: e.locationId,
+        preferred_days: e.preferredDays,
+        notes: e.notes,
+        status: e.status,
+        created_at: e.createdAt,
+        client_first_name: e.patient?.firstName || '',
+        client_last_name: e.patient?.lastName || '',
+        client_email: e.patient?.email || '',
+        client_phone: e.patient?.phone || '',
+      }));
+      res.status(200).json({ success: true, data: mapped });
+      return;
+    }
+
     // 12. GFE Forms / Records
     if (tableName === 'gfe_records' || tableName === 'gfe_forms') {
       const gfeForms = await prisma.gfeForm.findMany({
@@ -1597,6 +1623,23 @@ const handleUpdateById = async (req: Request, res: Response, next: NextFunction)
       return;
     }
 
+    if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      try {
+        const updated = await prisma.waitlistEntry.update({
+          where: { id },
+          data: {
+            ...(req.body.status !== undefined && { status: req.body.status }),
+            ...(req.body.notes !== undefined && { notes: req.body.notes }),
+          },
+        });
+        res.status(200).json({ success: true, data: updated });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
     // Dynamic Prisma Model Update by ID
     const modelName = Object.keys(prisma).find(
       (key) => key.toLowerCase() === tableName || key.toLowerCase() === tableName.replace(/s$/, '')
@@ -1649,9 +1692,10 @@ router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextF
     } else if (tableName === 'device_presets' || tableName === 'device_preset') {
       const idx = globalDevicePresets.findIndex(p => p.id === id);
       if (idx >= 0) globalDevicePresets.splice(idx, 1);
-    } else if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
-      const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
-      if (idx >= 0) globalDeviceMaintenance.splice(idx, 1);
+    } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      try {
+        await prisma.waitlistEntry.delete({ where: { id: id as string } });
+      } catch {}
     }
     res.status(200).json({ success: true, data: { deleted: true } });
   } catch (error) {
@@ -1674,9 +1718,10 @@ router.delete('/:tableName', async (req: Request, res: Response, next: NextFunct
       } else if (tableName === 'device_presets' || tableName === 'device_preset') {
         const idx = globalDevicePresets.findIndex(p => p.id === id);
         if (idx >= 0) globalDevicePresets.splice(idx, 1);
-      } else if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
-        const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
-        if (idx >= 0) globalDeviceMaintenance.splice(idx, 1);
+      } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+        try {
+          await prisma.waitlistEntry.delete({ where: { id: id as string } });
+        } catch {}
       }
     }
     res.status(200).json({ success: true, data: { deleted: true } });

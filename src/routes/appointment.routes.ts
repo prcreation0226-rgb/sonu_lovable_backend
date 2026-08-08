@@ -39,6 +39,18 @@ router.post(
   AppointmentController.createPublicBookingRequest
 );
 
+/**
+ * @route   POST /api/v1/appointments/waitlist
+ * @desc    Add Patient to Waitlist
+ * @access  Public
+ */
+router.post(
+  '/waitlist',
+  authLimiter,
+  validate({ body: WaitlistSchema }),
+  AppointmentController.createWaitlistEntry
+);
+
 // All internal appointment routes require authentication
 router.use(authenticate);
 
@@ -139,16 +151,5 @@ router.post(
   AppointmentController.createStaffTimeOff
 );
 
-/**
- * @route   POST /api/v1/appointments/waitlist
- * @desc    Add Patient to Waitlist
- * @access  Admin & Front Desk ONLY
- */
-router.post(
-  '/waitlist',
-  requireRoles(...SCHEDULING_ROLES),
-  validate({ body: WaitlistSchema }),
-  AppointmentController.createWaitlistEntry
-);
 
 export default router;

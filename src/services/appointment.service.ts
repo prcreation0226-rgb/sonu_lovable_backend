@@ -707,25 +707,54 @@ export class AppointmentService {
   /**
    * Add Entry to Waitlist.
    */
-  static async createWaitlistEntry(input: WaitlistInput, userId: string, ipAddress: string) {
+  static async createWaitlistEntry(input: any, userId: string | null, ipAddress: string) {
+    let patientId = input.patientId;
+
+    if (!patientId && userId) {
+      const patient = await prisma.patientProfile.findUnique({ where: { userId } });
+      if (patient) patientId = patient.id;
+    }
+
+    if (!patientId && input.email) {
+      const cleanEmail = input.email.trim().toLowerCase();
+      let patient = await prisma.patientProfile.findUnique({ where: { email: cleanEmail } });
+      if (!patient) {
+        patient = await prisma.patientProfile.create({
+          data: {
+            firstName: input.firstName || 'Waitlist',
+            lastName: input.lastName || 'Patient',
+            email: cleanEmail,
+            phone: input.phone || null,
+          },
+        });
+      }
+      patientId = patient.id;
+    }
+
+    if (!patientId) {
+      throw AppError.badRequest('Patient profile is required for waitlist entry');
+    }
+
     const entry = await prisma.waitlistEntry.create({
       data: {
-        patientId: input.patientId,
+        patientId,
         serviceId: input.serviceId || undefined,
         locationId: input.locationId || undefined,
-        preferredDays: input.preferredDays,
-        notes: input.notes,
+        preferredDays: input.preferredDays || null,
+        notes: input.notes || null,
       },
     });
 
-    await writeAuditLog({
-      userId,
-      patientId: input.patientId,
-      action: 'WAITLIST_ENTRY_CREATED',
-      resourceType: 'waitlist_entry',
-      resourceId: entry.id,
-      ipAddress,
-    });
+    if (userId) {
+      await writeAuditLog({
+        userId,
+        patientId,
+        action: 'WAITLIST_ENTRY_CREATED',
+        resourceType: 'waitlist_entry',
+        resourceId: entry.id,
+        ipAddress,
+      }).catch(() => {});
+    }
 
     return entry;
   }
