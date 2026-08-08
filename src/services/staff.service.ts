@@ -410,15 +410,32 @@ export class StaffService {
         OR: [
           { id: staffId },
           { userId: staffId },
+          { email: staffId },
         ],
       },
     });
 
+    const now = new Date();
+
     if (!existing) {
+      const userRecord = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { id: staffId },
+            { email: staffId },
+          ],
+        },
+      });
+      if (userRecord) {
+        await prisma.user.update({
+          where: { id: userRecord.id },
+          data: { deletedAt: now, isActive: false },
+        });
+        await prisma.session.deleteMany({ where: { userId: userRecord.id } }).catch(() => {});
+        await prisma.refreshToken.deleteMany({ where: { userId: userRecord.id } }).catch(() => {});
+      }
       return;
     }
-
-    const now = new Date();
 
     await prisma.$transaction(async (tx) => {
       await tx.staffProfile.update({

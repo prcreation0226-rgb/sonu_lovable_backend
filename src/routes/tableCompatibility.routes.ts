@@ -789,7 +789,17 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
           const r = (s.role || '').toLowerCase();
           const t = (s.title || '').toLowerCase();
           const n = (s.full_name || '').toLowerCase();
-          return r === 'provider' || r === 'nurse_practitioner' || t.includes('provider') || n.includes('girish');
+          if (r === 'medical_director' || t.includes('medical director')) return false;
+          return (
+            r === 'provider' ||
+            r === 'nurse_practitioner' ||
+            r === 'rn_injector' ||
+            t.includes('provider') ||
+            t.includes('injector') ||
+            t.includes('practitioner') ||
+            t.includes('nurse') ||
+            n.includes('girish')
+          );
         });
         if (providerStaff.length > 0) {
           finalData = providerStaff;
@@ -798,6 +808,57 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
 
       res.status(200).json({ success: true, data: finalData });
       return;
+    }
+
+    // Appointments
+    if (tableName === 'appointments' || tableName === 'appointment') {
+      try {
+        const appts = await prisma.appointment.findMany({
+          orderBy: { startAt: 'desc' },
+          include: {
+            patient: true,
+            staff: true,
+            location: true,
+            appointmentServices: { include: { service: true } },
+          },
+        });
+        const mapped = appts.map((a: any) => ({
+          id: a.id,
+          booking_token: a.bookingToken || a.id,
+          bookingToken: a.bookingToken || a.id,
+          token: a.bookingToken || a.id,
+          status: (a.status || "pending").toLowerCase(),
+          start_at: a.startAt,
+          end_at: a.endAt,
+          client_first_name: a.patient?.firstName || "",
+          client_last_name: a.patient?.lastName || "",
+          client_email: a.patient?.email || "",
+          client_phone: a.patient?.phone || "",
+          service_name: a.appointmentServices?.[0]?.service?.name || "Aesthetic Treatment",
+          staff_id: a.staffId,
+          staff_name: a.staff?.fullName || "Provider",
+          location_id: a.locationId,
+          locations: a.location ? {
+            name: a.location.name,
+            address: a.location.address,
+            city: a.location.city,
+            state: a.location.state || "CA",
+            zip: a.location.zip || "95124",
+          } : undefined,
+          staff_profiles: a.staff ? {
+            full_name: a.staff.fullName,
+            title: a.staff.title || "Provider",
+          } : undefined,
+          services: a.appointmentServices?.[0]?.service ? {
+            name: a.appointmentServices[0].service.name,
+          } : undefined,
+        }));
+        res.status(200).json({ success: true, data: mapped });
+        return;
+      } catch (err) {
+        res.status(200).json({ success: true, data: [] });
+        return;
+      }
     }
 
     // 11. Locations
