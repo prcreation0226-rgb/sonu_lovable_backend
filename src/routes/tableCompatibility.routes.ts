@@ -978,6 +978,47 @@ router.post('/:tableName', async (req: Request, res: Response, next: NextFunctio
 });
 
 /**
+ * Normalizes snake_case keys and string statuses to Prisma types for appointments.
+ */
+function normalizeAppointmentPayload(body: any): any {
+  const updateData = { ...body };
+  delete updateData.id;
+
+  if (typeof updateData.status === 'string') {
+    updateData.status = updateData.status.toUpperCase();
+  }
+  if (typeof updateData.source === 'string') {
+    updateData.source = updateData.source.toUpperCase();
+  }
+  if (updateData.checked_in_at) {
+    updateData.checkedInAt = new Date(updateData.checked_in_at);
+    delete updateData.checked_in_at;
+  }
+  if (updateData.checkedInAt) {
+    updateData.checkedInAt = new Date(updateData.checkedInAt);
+  }
+  if (updateData.completed_at) {
+    updateData.completedAt = new Date(updateData.completed_at);
+    delete updateData.completed_at;
+  }
+  if (updateData.completedAt) {
+    updateData.completedAt = new Date(updateData.completedAt);
+  }
+  if (updateData.cancelled_at) {
+    updateData.cancelledAt = new Date(updateData.cancelled_at);
+    delete updateData.cancelled_at;
+  }
+  if (updateData.cancelledAt) {
+    updateData.cancelledAt = new Date(updateData.cancelledAt);
+  }
+  if (updateData.cancellation_reason !== undefined) {
+    updateData.cancellationReason = updateData.cancellation_reason;
+    delete updateData.cancellation_reason;
+  }
+  return updateData;
+}
+
+/**
  * Handle PATCH & PUT / UPDATE requests for legacy table endpoints
  */
 const handleUpdate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -1084,15 +1125,27 @@ const handleUpdate = async (req: Request, res: Response, next: NextFunction): Pr
       (key) => key.toLowerCase() === tableName || key.toLowerCase() === tableName.replace(/s$/, '')
     );
 
-    if (modelName && req.body?.id && typeof (prisma as any)[modelName]?.update === 'function') {
+    const updateId = req.query?.id as string | undefined || req.body?.id as string | undefined;
+
+    if (modelName && updateId && typeof (prisma as any)[modelName]?.update === 'function') {
       try {
+        let updateData = { ...req.body };
+        delete updateData.id;
+
+        const lowerTable = tableName.toLowerCase();
+        if (lowerTable === 'appointments' || lowerTable === 'appointment') {
+          updateData = normalizeAppointmentPayload(req.body);
+        }
+
         const record = await (prisma as any)[modelName].update({
-          where: { id: req.body.id },
-          data: req.body,
+          where: { id: updateId },
+          data: updateData,
         });
         res.status(200).json({ success: true, data: record });
         return;
-      } catch {}
+      } catch (err: any) {
+        console.error('Compatibility update error:', err);
+      }
     }
 
     res.status(200).json({ success: true, data: { id: req.body.id || 'updated-id', ...req.body } });
@@ -1146,13 +1199,23 @@ const handleUpdateById = async (req: Request, res: Response, next: NextFunction)
 
     if (modelName && typeof (prisma as any)[modelName]?.update === 'function') {
       try {
+        let updateData = { ...req.body };
+        delete updateData.id;
+
+        const lowerTable = tableName.toLowerCase();
+        if (lowerTable === 'appointments' || lowerTable === 'appointment') {
+          updateData = normalizeAppointmentPayload(req.body);
+        }
+
         const record = await (prisma as any)[modelName].update({
           where: { id },
-          data: req.body,
+          data: updateData,
         });
         res.status(200).json({ success: true, data: record });
         return;
-      } catch {}
+      } catch (err: any) {
+        console.error('Compatibility update by ID error:', err);
+      }
     }
 
     // Graceful fallback — return the payload as-is (safe no-op)
