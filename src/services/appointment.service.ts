@@ -615,15 +615,6 @@ export class AppointmentService {
             targetStaff = await tx.staffProfile.findFirst({ where: { isActive: true, deletedAt: null } });
           }
           if (!targetStaff) {
-<<<<<<< HEAD
-            let defaultUser = await tx.user.findFirst({ where: { email: 'provider@radiantilyk.com' } });
-            if (!defaultUser) {
-              defaultUser = await tx.user.create({
-                data: {
-                  email: 'provider@radiantilyk.com',
-                  passwordHash: await bcrypt.hash('Provider123!', 10),
-                  isActive: true,
-=======
             targetStaff = await tx.staffProfile.findFirst({ where: { deletedAt: null } });
           }
           if (!targetStaff) {
@@ -636,7 +627,6 @@ export class AppointmentService {
                   passwordHash: hashedPassword,
                   isActive: true,
                   userRoles: defaultRole ? { create: { roleId: defaultRole.id } } : undefined,
->>>>>>> 101119de528d43e7832048de1b0a6fd2ce49f1de
                 },
               });
             }
