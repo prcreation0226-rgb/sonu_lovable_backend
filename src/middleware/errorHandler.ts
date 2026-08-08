@@ -58,20 +58,6 @@ export function globalErrorHandler(
   }
 
   // ---- Prisma Errors ----
-  if (err instanceof Prisma.PrismaClientValidationError) {
-    logger.warn(`[PRISMA_VALIDATION] ${err.message}`);
-    const response: ApiResponse = {
-      success: false,
-      error: {
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Database query validation failed',
-        details: env.IS_PRODUCTION ? undefined : err.message,
-      },
-    };
-    res.status(400).json(response);
-    return;
-  }
-
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     let statusCode = 500;
     let message = 'Database operation failed';

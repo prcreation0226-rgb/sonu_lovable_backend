@@ -867,32 +867,11 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
 
     // 11. Locations
     if (tableName === 'locations' || tableName === 'location') {
-      try {
-        const locations = await prisma.location.findMany({
-          where: { deletedAt: null },
-          orderBy: { name: 'asc' },
-        });
-        if (locations.length > 0) {
-          res.status(200).json({ success: true, data: locations });
-          return;
-        }
-      } catch {}
-      res.status(200).json({
-        success: true,
-        data: [
-          {
-            id: 'loc-sj-01',
-            name: 'San Jose Main Clinic',
-            address: '100 Medical Center Way',
-            city: 'San Jose',
-            state: 'CA',
-            zipCode: '95124',
-            phone: '(555) 019-2831',
-            timezone: 'America/Los_Angeles',
-            isActive: true,
-          },
-        ],
+      const locations = await prisma.location.findMany({
+        where: { deletedAt: null },
+        orderBy: { name: 'asc' },
       });
+      res.status(200).json({ success: true, data: locations });
       return;
     }
 
@@ -1693,28 +1672,6 @@ const handleUpdate = async (req: Request, res: Response, next: NextFunction): Pr
       }
       res.status(200).json({ success: true, data: req.body });
       return;
-    }
-
-    // Special handling for waitlist_entries / waitlist
-    if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
-      const targetId = (req.query?.id || req.body?.id) as string;
-      if (targetId) {
-        try {
-          const updated = await prisma.waitlistEntry.update({
-            where: { id: targetId },
-            data: {
-              ...(req.body.status !== undefined && { status: req.body.status }),
-              ...(req.body.notes !== undefined && { notes: req.body.notes }),
-            },
-          });
-          res.status(200).json({ success: true, data: updated });
-          return;
-        } catch (err: any) {
-          console.error('Waitlist update error:', err);
-          res.status(500).json({ success: false, message: err.message });
-          return;
-        }
-      }
     }
 
     // Dynamic Prisma Model Update

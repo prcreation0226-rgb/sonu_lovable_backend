@@ -45,56 +45,18 @@ export class LocationService {
   }
 
   static async getLocations() {
-    try {
-      const dbLocations = await prisma.location.findMany({
-        where: { deletedAt: null, isActive: true },
-        orderBy: { name: 'asc' },
-      });
-      if (dbLocations.length > 0) return dbLocations;
-    } catch (err) {
-      console.warn('[LOCATION_SERVICE] DB query failed, using resilient fallback locations catalog:', err);
-    }
-    return [
-      {
-        id: 'loc-sj-01',
-        name: 'San Jose Main Clinic',
-        address: '100 Medical Center Way',
-        city: 'San Jose',
-        state: 'CA',
-        zipCode: '95124',
-        phone: '(555) 019-2831',
-        timezone: 'America/Los_Angeles',
-        isActive: true,
-        deletedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ];
+    return prisma.location.findMany({
+      where: { deletedAt: null, isActive: true },
+      orderBy: { name: 'asc' },
+    });
   }
 
   static async getLocationById(id: string) {
-    try {
-      const location = await prisma.location.findFirst({
-        where: { id, deletedAt: null },
-      });
-      if (location) return location;
-    } catch (err) {
-      console.warn('[LOCATION_SERVICE] DB query failed for getLocationById:', err);
-    }
-    return {
-      id: id || 'loc-sj-01',
-      name: 'San Jose Main Clinic',
-      address: '100 Medical Center Way',
-      city: 'San Jose',
-      state: 'CA',
-      zipCode: '95124',
-      phone: '(555) 019-2831',
-      timezone: 'America/Los_Angeles',
-      isActive: true,
-      deletedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const location = await prisma.location.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!location) throw AppError.notFound('Location');
+    return location;
   }
 
   static async updateLocation(id: string, input: Partial<LocationInput>, adminUserId: string, ipAddress: string) {

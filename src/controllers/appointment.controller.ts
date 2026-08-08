@@ -31,24 +31,15 @@ export class AppointmentController {
 
   static async getAppointments(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const rawLocationId = Array.isArray(req.query.locationId) ? req.query.locationId[0] : req.query.locationId;
-      const rawStaffId = Array.isArray(req.query.staffId) ? req.query.staffId[0] : req.query.staffId;
-      const rawPatientId = Array.isArray(req.query.patientId) ? req.query.patientId[0] : req.query.patientId;
-      const rawStartDate = Array.isArray(req.query.startDate) ? req.query.startDate[0] : req.query.startDate;
-      const rawEndDate = Array.isArray(req.query.endDate) ? req.query.endDate[0] : req.query.endDate;
-      const rawStatus = Array.isArray(req.query.status) ? req.query.status[0] : req.query.status;
-      const rawPage = Array.isArray(req.query.page) ? req.query.page[0] : req.query.page;
-      const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-
       const filters = {
-        locationId: typeof rawLocationId === 'string' ? rawLocationId : undefined,
-        staffId: typeof rawStaffId === 'string' ? rawStaffId : undefined,
-        patientId: typeof rawPatientId === 'string' ? rawPatientId : undefined,
-        startDate: typeof rawStartDate === 'string' ? rawStartDate : undefined,
-        endDate: typeof rawEndDate === 'string' ? rawEndDate : undefined,
-        status: typeof rawStatus === 'string' ? (rawStatus as AppointmentStatus) : undefined,
-        page: Math.max(1, parseInt(rawPage as string) || 1),
-        limit: Math.max(1, Math.min(100, parseInt(rawLimit as string) || 50)),
+        locationId: req.query.locationId as string,
+        staffId: req.query.staffId as string,
+        patientId: req.query.patientId as string,
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+        status: req.query.status as AppointmentStatus,
+        page: parseInt(req.query.page as string) || 1,
+        limit: parseInt(req.query.limit as string) || 50,
       };
 
       const result = await AppointmentService.getAppointments(filters);

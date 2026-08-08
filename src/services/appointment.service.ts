@@ -154,8 +154,8 @@ export class AppointmentService {
     page?: number;
     limit?: number;
   }) {
-    const page = Math.max(1, filters.page || 1);
-    const limit = Math.max(1, Math.min(100, filters.limit || 50));
+    const page = filters.page || 1;
+    const limit = filters.limit || 50;
     const skip = (page - 1) * limit;
 
     const where: any = {
