@@ -1,3 +1,4 @@
+
 // Radiantilyk EMR — Appointment & Scheduling Service
 // Manages clinic appointment lifecycle, provider double-booking checks, calendar views,
 // status state machine transitions, online booking tokens, time off, and waitlists.
@@ -461,19 +462,21 @@ export class AppointmentService {
     if (!service) throw AppError.notFound('Service');
 
     // 1. Resolve staffId with fallback
-    let staffId = input.staffId;
-    let staff = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
+    let staffId = input.staffId || undefined;
+    let staff = staffId ? await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } }) : null;
     if (!staff) {
       staff = await prisma.staffProfile.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (!staff) staff = await prisma.staffProfile.findFirst({ where: { deletedAt: null } });
       if (!staff) throw AppError.notFound('Staff Profile');
       staffId = staff.id;
     }
 
     // 2. Resolve locationId with fallback
-    let locationId = input.locationId;
-    let location = await prisma.location.findFirst({ where: { id: locationId, deletedAt: null } });
+    let locationId = input.locationId || undefined;
+    let location = locationId ? await prisma.location.findFirst({ where: { id: locationId, deletedAt: null } }) : null;
     if (!location) {
       location = await prisma.location.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (!location) location = await prisma.location.findFirst({ where: { deletedAt: null } });
       if (!location) throw AppError.notFound('Location');
       locationId = location.id;
     }
@@ -581,18 +584,18 @@ export class AppointmentService {
           }
 
           // 2b. Safely resolve locationId and staffId (fallback to first available or create default if missing)
-          let targetLocation = await tx.location.findFirst({
-            where: { id: input.locationId, deletedAt: null },
-          });
+          let targetLocation = input.locationId
+            ? await tx.location.findFirst({ where: { id: input.locationId, deletedAt: null } })
+            : null;
           if (!targetLocation) {
-            targetLocation = await tx.location.findFirst({
-              where: { isActive: true, deletedAt: null },
-            });
+            targetLocation = await tx.location.findFirst({ where: { isActive: true, deletedAt: null } });
+          }
+          if (!targetLocation) {
+            targetLocation = await tx.location.findFirst({ where: { deletedAt: null } });
           }
           if (!targetLocation) {
             targetLocation = await tx.location.create({
               data: {
-                id: input.locationId && input.locationId.length === 36 ? input.locationId : undefined,
                 name: 'Radiantilyk Main Clinic',
                 address: '100 Medical Center Way',
                 city: 'Beverly Hills',
@@ -605,18 +608,31 @@ export class AppointmentService {
             });
           }
 
-          let targetStaff = await tx.staffProfile.findFirst({
-            where: { id: input.staffId, deletedAt: null },
-          });
+          let targetStaff = input.staffId
+            ? await tx.staffProfile.findFirst({ where: { id: input.staffId, deletedAt: null } })
+            : null;
           if (!targetStaff) {
-            targetStaff = await tx.staffProfile.findFirst({
-              where: { isActive: true, deletedAt: null },
-            });
+            targetStaff = await tx.staffProfile.findFirst({ where: { isActive: true, deletedAt: null } });
           }
           if (!targetStaff) {
+            targetStaff = await tx.staffProfile.findFirst({ where: { deletedAt: null } });
+          }
+          if (!targetStaff) {
+            let providerUser = await tx.user.findFirst({ where: { email: 'provider@radiantilyk.com' } });
+            if (!providerUser) {
+              const defaultRole = await tx.role.findFirst({ where: { name: 'rn_injector' } });
+              providerUser = await tx.user.create({
+                data: {
+                  email: 'provider@radiantilyk.com',
+                  passwordHash: hashedPassword,
+                  isActive: true,
+                  userRoles: defaultRole ? { create: { roleId: defaultRole.id } } : undefined,
+                },
+              });
+            }
             targetStaff = await tx.staffProfile.create({
               data: {
-                id: input.staffId && input.staffId.length === 36 ? input.staffId : undefined,
+                userId: providerUser.id,
                 fullName: 'Nurse Practitioner Provider',
                 title: 'Nurse Practitioner & Lead Injector',
                 email: 'provider@radiantilyk.com',
