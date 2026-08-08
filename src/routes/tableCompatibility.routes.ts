@@ -458,23 +458,27 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
         ]);
 
         const staffEmailsSet = new Set(staffProfiles.map((s) => (s.email || '').toLowerCase().trim()).filter(Boolean));
-        const knownStaffEmails = new Set([
-          'admin@gmail.com',
-          'frontdesk@gmail.com',
-          'nurse@gmail.com',
-          'medical@gmail.com',
-          'injector@gmail.com',
-          'nursepractitioner@gmail.com',
-          'medicaldirector@gmail.com',
-          'security@gmail.com',
-          'thor@gmail.com',
-          'thomas@gmail.com',
-        ]);
+        const staffKeywords = [
+          'admin',
+          'nurse',
+          'frontdesk',
+          'medical',
+          'injector',
+          'practitioner',
+          'director',
+          'security',
+          'receptionist',
+          'provider',
+          'staff',
+          'thor',
+          'thomas',
+          'phase1-',
+        ];
 
         const isStaffEmail = (email: string) => {
           const em = email.toLowerCase().trim();
-          if (staffEmailsSet.has(em) || knownStaffEmails.has(em)) return true;
-          if (em.endsWith('@radiantilyk.com') || em.startsWith('phase1-')) return true;
+          if (staffEmailsSet.has(em)) return true;
+          if (em.endsWith('@radiantilyk.com') || staffKeywords.some((k) => em.includes(k))) return true;
           return false;
         };
 
