@@ -19,6 +19,9 @@ const router = Router();
 
 export const globalModelApplications: any[] = [];
 export const globalBreachReports: any[] = [];
+export const globalAestheticDevices: any[] = [];
+export const globalDevicePresets: any[] = [];
+export const globalDeviceMaintenance: any[] = [];
 export const globalVendors: any[] = [
   { id: "v-lovable", name: "Lovable Cloud (Database Host)", category: "Database & Cloud Infrastructure", touches_phi: true, baa_required: true, baa_status: "signed", baa_signed_at: "2025-01-15", baa_renewal_at: "2027-01-15", contact_name: "Compliance Dept", contact_email: "hipaa@lovable.dev", notes: "PostgreSQL & Asset Storage BAA" },
   { id: "v-twilio", name: "Twilio / GHL (SMS Communications)", category: "SMS Gateway", touches_phi: true, baa_required: true, baa_status: "signed", baa_signed_at: "2025-02-01", baa_renewal_at: "2027-02-01", contact_name: "Healthcare Support", contact_email: "baa@twilio.com", notes: "HIPAA Edition SMS Pipeline BAA" },
@@ -260,31 +263,61 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // 5b. Device Inventory / Devices
-    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device') {
+    // 5b. Device Inventory / Aesthetic Devices
+    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      let dbMapped: any[] = [];
       try {
         const devices = await prisma.deviceInventory.findMany({
           include: { assignedTo: true },
         });
-        const mapped = devices.map((d) => ({
+        dbMapped = devices.map((d) => ({
           id: d.id,
-          device_name: d.deviceName,
-          serial_number: d.serialNumber,
-          device_type: d.deviceType,
-          assigned_to: d.assignedTo ? d.assignedTo.fullName : null,
-          encryption_status: d.isEncrypted ? 'Encrypted' : 'Unencrypted',
-          manufacturer: 'Other',
-          model: null,
-          location: null,
-          os_version: null,
-          purchase_date: null,
-          warranty_expiry: null,
+          name: d.deviceName,
+          model: d.deviceName,
+          serial_number: d.serialNumber || '',
+          manufacturer: 'Aesthetic Hardware',
+          modality: d.deviceType || 'Laser',
+          room_assignment: 'Treatment Suite 1',
+          status: 'active',
+          pulse_count: 0,
+          pulse_limit: null,
+          last_serviced_at: null,
+          next_service_due: null,
           notes: d.disposalLog || null,
+          is_archived: false,
         }));
-        res.status(200).json({ success: true, data: mapped });
-      } catch {
-        res.status(200).json({ success: true, data: [] });
+      } catch {}
+      const combined = [...globalAestheticDevices];
+      for (const d of dbMapped) {
+        if (!combined.some(x => x.id === d.id)) combined.push(d);
       }
+      res.status(200).json({ success: true, data: combined });
+      return;
+    }
+
+    // 5c. Device Presets
+    if (tableName === 'device_presets' || tableName === 'device_preset') {
+      let dbMapped: any[] = [];
+      try {
+        const dbPresets = await prisma.devicePreset.findMany();
+        dbMapped = dbPresets.map((p) => ({
+          id: p.id,
+          device_name: p.deviceName,
+          treatment_type: p.presetName || 'Laser',
+          ...(typeof p.settings === 'object' && p.settings ? p.settings : {}),
+        }));
+      } catch {}
+      const combined = [...globalDevicePresets];
+      for (const p of dbMapped) {
+        if (!combined.some(x => x.id === p.id)) combined.push(p);
+      }
+      res.status(200).json({ success: true, data: combined });
+      return;
+    }
+
+    // 5d. Device Maintenance / Service Logs
+    if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
+      res.status(200).json({ success: true, data: globalDeviceMaintenance });
       return;
     }
 
@@ -940,21 +973,96 @@ router.post('/:tableName', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Special handling for device_inventory
-    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device') {
+    // Handling for device_inventory / aesthetic_devices
+    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      const newItem = {
+        id: req.body.id || `dev-${Date.now()}`,
+        name: req.body.name || req.body.device_name || 'New Device',
+        model: req.body.model || req.body.name || 'Standard Model',
+        serial_number: req.body.serial_number || `SN-${Date.now()}`,
+        manufacturer: req.body.manufacturer || 'General Aesthetics',
+        modality: req.body.modality || 'Laser',
+        room_assignment: req.body.room_assignment || 'Treatment Room 1',
+        status: req.body.status || 'active',
+        pulse_count: req.body.pulse_count ?? null,
+        pulse_limit: req.body.pulse_limit ?? null,
+        last_serviced_at: req.body.last_serviced_at || null,
+        next_service_due: req.body.next_service_due || null,
+        notes: req.body.notes || null,
+        is_archived: false,
+      };
       try {
-        const record = await prisma.deviceInventory.create({
+        await prisma.deviceInventory.create({
           data: {
-            deviceName: req.body.device_name || req.body.deviceName || 'Device',
-            serialNumber: req.body.serial_number || req.body.serialNumber || `SN-${Date.now()}`,
-            deviceType: req.body.device_type || req.body.deviceType || 'Workstation',
-            isEncrypted: req.body.encryption_status !== 'Unencrypted',
+            id: newItem.id,
+            deviceName: newItem.name,
+            serialNumber: newItem.serial_number,
+            deviceType: newItem.modality,
           },
-        });
-        res.status(201).json({ success: true, data: { ...req.body, id: record.id } });
-      } catch {
-        res.status(201).json({ success: true, data: { id: req.body.id || `device-${Date.now()}`, ...req.body } });
+        }).catch(() => {});
+      } catch {}
+      const existingIdx = globalAestheticDevices.findIndex(d => d.id === newItem.id);
+      if (existingIdx >= 0) {
+        globalAestheticDevices[existingIdx] = newItem;
+      } else {
+        globalAestheticDevices.unshift(newItem);
       }
+      res.status(201).json({ success: true, data: newItem });
+      return;
+    }
+
+    // Handling for device_presets
+    if (tableName === 'device_presets' || tableName === 'device_preset') {
+      const newPreset = {
+        id: req.body.id || `preset-${Date.now()}`,
+        device_id: req.body.device_id || null,
+        device_name: req.body.device_name || 'General Device',
+        treatment_type: req.body.treatment_type || 'Laser',
+        fitzpatrick: req.body.fitzpatrick || null,
+        depth_mm: req.body.depth_mm ?? null,
+        energy: req.body.energy ?? null,
+        energy_unit: req.body.energy_unit || 'J/cm²',
+        passes: req.body.passes ?? null,
+        pulse_ms: req.body.pulse_ms ?? null,
+        pulse_hz: req.body.pulse_hz ?? null,
+        spot_size_mm: req.body.spot_size_mm ?? null,
+        cooling: req.body.cooling || null,
+        notes: req.body.notes || null,
+        is_archived: false,
+      };
+      try {
+        await prisma.devicePreset.create({
+          data: {
+            id: newPreset.id,
+            deviceName: newPreset.device_name,
+            presetName: newPreset.treatment_type,
+            settings: newPreset as any,
+          },
+        }).catch(() => {});
+      } catch {}
+      const existingIdx = globalDevicePresets.findIndex(p => p.id === newPreset.id);
+      if (existingIdx >= 0) {
+        globalDevicePresets[existingIdx] = newPreset;
+      } else {
+        globalDevicePresets.unshift(newPreset);
+      }
+      res.status(201).json({ success: true, data: newPreset });
+      return;
+    }
+
+    // Handling for device_maintenance
+    if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
+      const newMaint = {
+        id: req.body.id || `maint-${Date.now()}`,
+        device_name: req.body.device_name || 'Device',
+        service_date: req.body.service_date || new Date().toISOString().split('T')[0],
+        technician: req.body.technician || 'Technician',
+        service_type: req.body.service_type || 'Routine Calibration',
+        notes: req.body.notes || '',
+        cost: req.body.cost ?? null,
+      };
+      globalDeviceMaintenance.unshift(newMaint);
+      res.status(201).json({ success: true, data: newMaint });
       return;
     }
 
@@ -1074,8 +1182,46 @@ const handleUpdate = async (req: Request, res: Response, next: NextFunction): Pr
           return;
         } catch {}
       }
-      // No valid DB id — return success so UI doesn't break
       res.status(200).json({ success: true, data: { id: req.body.id || 'updated-id', ...req.body } });
+      return;
+    }
+
+    // Special handling for device_inventory / aesthetic_devices
+    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      const targetId = (req.query?.id || req.body?.id) as string;
+      const idx = globalAestheticDevices.findIndex(d => d.id === targetId);
+      if (idx >= 0) {
+        globalAestheticDevices[idx] = { ...globalAestheticDevices[idx], ...req.body };
+        res.status(200).json({ success: true, data: globalAestheticDevices[idx] });
+        return;
+      }
+      res.status(200).json({ success: true, data: req.body });
+      return;
+    }
+
+    // Special handling for device_presets
+    if (tableName === 'device_presets' || tableName === 'device_preset') {
+      const targetId = (req.query?.id || req.body?.id) as string;
+      const idx = globalDevicePresets.findIndex(p => p.id === targetId);
+      if (idx >= 0) {
+        globalDevicePresets[idx] = { ...globalDevicePresets[idx], ...req.body };
+        res.status(200).json({ success: true, data: globalDevicePresets[idx] });
+        return;
+      }
+      res.status(200).json({ success: true, data: req.body });
+      return;
+    }
+
+    // Special handling for device_maintenance
+    if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
+      const targetId = (req.query?.id || req.body?.id) as string;
+      const idx = globalDeviceMaintenance.findIndex(m => m.id === targetId);
+      if (idx >= 0) {
+        globalDeviceMaintenance[idx] = { ...globalDeviceMaintenance[idx], ...req.body };
+        res.status(200).json({ success: true, data: globalDeviceMaintenance[idx] });
+        return;
+      }
+      res.status(200).json({ success: true, data: req.body });
       return;
     }
 
@@ -1109,6 +1255,36 @@ const handleUpdateById = async (req: Request, res: Response, next: NextFunction)
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
     const id = req.params.id as string;
+
+    // Devices
+    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      const idx = globalAestheticDevices.findIndex(d => d.id === id);
+      if (idx >= 0) {
+        globalAestheticDevices[idx] = { ...globalAestheticDevices[idx], ...req.body };
+        res.status(200).json({ success: true, data: globalAestheticDevices[idx] });
+        return;
+      }
+    }
+
+    // Presets
+    if (tableName === 'device_presets' || tableName === 'device_preset') {
+      const idx = globalDevicePresets.findIndex(p => p.id === id);
+      if (idx >= 0) {
+        globalDevicePresets[idx] = { ...globalDevicePresets[idx], ...req.body };
+        res.status(200).json({ success: true, data: globalDevicePresets[idx] });
+        return;
+      }
+    }
+
+    // Maintenance
+    if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
+      const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
+      if (idx >= 0) {
+        globalDeviceMaintenance[idx] = { ...globalDeviceMaintenance[idx], ...req.body };
+        res.status(200).json({ success: true, data: globalDeviceMaintenance[idx] });
+        return;
+      }
+    }
 
     // Skip local-only IDs that don't exist in the database (e.g. "approved-*")
     if (!id || id.startsWith('approved-') || id.startsWith('user-')) {
@@ -1171,8 +1347,42 @@ router.put('/:tableName', handleUpdate);
 /**
  * Handle DELETE requests for legacy table endpoints
  */
-router.delete('/:tableName', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const tableName = (req.params.tableName as string).toLowerCase();
+    const id = req.params.id;
+    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      const idx = globalAestheticDevices.findIndex(d => d.id === id);
+      if (idx >= 0) globalAestheticDevices.splice(idx, 1);
+    } else if (tableName === 'device_presets' || tableName === 'device_preset') {
+      const idx = globalDevicePresets.findIndex(p => p.id === id);
+      if (idx >= 0) globalDevicePresets.splice(idx, 1);
+    } else if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
+      const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
+      if (idx >= 0) globalDeviceMaintenance.splice(idx, 1);
+    }
+    res.status(200).json({ success: true, data: { deleted: true } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:tableName', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const tableName = (req.params.tableName as string).toLowerCase();
+    const id = (req.query?.id || req.body?.id) as string;
+    if (id) {
+      if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+        const idx = globalAestheticDevices.findIndex(d => d.id === id);
+        if (idx >= 0) globalAestheticDevices.splice(idx, 1);
+      } else if (tableName === 'device_presets' || tableName === 'device_preset') {
+        const idx = globalDevicePresets.findIndex(p => p.id === id);
+        if (idx >= 0) globalDevicePresets.splice(idx, 1);
+      } else if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
+        const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
+        if (idx >= 0) globalDeviceMaintenance.splice(idx, 1);
+      }
+    }
     res.status(200).json({ success: true, data: { deleted: true } });
   } catch (error) {
     next(error);
