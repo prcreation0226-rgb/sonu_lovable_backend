@@ -1674,6 +1674,28 @@ const handleUpdate = async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
+    // Special handling for waitlist_entries / waitlist
+    if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      const targetId = (req.query?.id || req.body?.id) as string;
+      if (targetId) {
+        try {
+          const updated = await prisma.waitlistEntry.update({
+            where: { id: targetId },
+            data: {
+              ...(req.body.status !== undefined && { status: req.body.status }),
+              ...(req.body.notes !== undefined && { notes: req.body.notes }),
+            },
+          });
+          res.status(200).json({ success: true, data: updated });
+          return;
+        } catch (err: any) {
+          console.error('Waitlist update error:', err);
+          res.status(500).json({ success: false, message: err.message });
+          return;
+        }
+      }
+    }
+
     // Dynamic Prisma Model Update
     const modelName = Object.keys(prisma).find(
       (key) => key.toLowerCase() === tableName || key.toLowerCase() === tableName.replace(/s$/, '')
