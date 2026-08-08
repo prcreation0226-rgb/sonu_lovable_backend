@@ -1869,3 +1869,27 @@ model Reward {
 
   @@map("rewards")
 }
+
+model ClinicBookingHours {
+  id        String   @id @default(uuid()) @db.Char(36)
+  dayOfWeek Int      @unique @map("day_of_week") // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  startTime String   @default("09:00") @map("start_time") @db.VarChar(10)
+  endTime   String   @default("18:00") @map("end_time") @db.VarChar(10)
+  isOpen    Boolean  @default(true) @map("is_open")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("clinic_booking_hours")
+}
+
+model ClinicHoliday {
+  id        String   @id @default(uuid()) @db.Char(36)
+  date      String   @unique @db.VarChar(10) // YYYY-MM-DD
+  name      String?  @db.VarChar(255)
+  isClosed  Boolean  @default(true) @map("is_closed")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("clinic_holidays")
+}
+

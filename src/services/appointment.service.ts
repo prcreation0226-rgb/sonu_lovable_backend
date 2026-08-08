@@ -76,56 +76,56 @@ export class AppointmentService {
     const startAt = new Date(input.startAt);
     const endAt = input.endAt ? new Date(input.endAt) : new Date(startAt.getTime() + totalDurationMinutes * 60 * 1000);
 
-    // Double-Booking Overlap Check
-    const overlapping = await prisma.appointment.findFirst({
-      where: {
-        staffId: input.staffId,
-        deletedAt: null,
-        status: { notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW, AppointmentStatus.RESCHEDULED] },
-        OR: [
-          { startAt: { lt: endAt }, endAt: { gt: startAt } },
-        ],
-      },
-    });
+    // Atomic Double-Booking Overlap Check & Creation inside Transaction
+    const appointment = await prisma.$transaction(async (tx) => {
+      const overlapping: any[] = await tx.$queryRaw`
+        SELECT id FROM appointments 
+        WHERE staff_id = ${input.staffId}
+          AND deleted_at IS NULL
+          AND status NOT IN ('CANCELLED', 'NO_SHOW', 'RESCHEDULED')
+          AND start_at < ${endAt}
+          AND end_at > ${startAt}
+        FOR UPDATE
+      `;
 
-    if (overlapping) {
-      throw AppError.conflict('Provider already has an active appointment during this time slot');
-    }
+      if (overlapping && overlapping.length > 0) {
+        throw AppError.conflict('Selected time is no longer available.');
+      }
 
-    // Create Appointment with nested services
-    const appointment = await prisma.appointment.create({
-      data: {
-        patientId: input.patientId,
-        staffId: input.staffId,
-        locationId: input.locationId,
-        startAt,
-        endAt,
-        status: AppointmentStatus.PENDING,
-        source: input.source || AppointmentSource.STAFF,
-        notes: input.notes,
-        internalNotes: input.internalNotes,
-        bookingToken: `BKR-${uuidv4().substring(0, 8).toUpperCase()}`,
-        appointmentServices: {
-          create: services.map((s) => ({
-            serviceId: s.id,
-            priceCents: s.priceCents,
-            durationMinutes: s.durationMinutes,
-          })),
-        },
-        statusHistories: {
-          create: {
-            newStatus: AppointmentStatus.PENDING,
-            changedBy: userId,
-            reason: 'Appointment created',
+      return await tx.appointment.create({
+        data: {
+          patientId: input.patientId,
+          staffId: input.staffId,
+          locationId: input.locationId,
+          startAt,
+          endAt,
+          status: AppointmentStatus.PENDING,
+          source: input.source || AppointmentSource.STAFF,
+          notes: input.notes,
+          internalNotes: input.internalNotes,
+          bookingToken: `BKR-${uuidv4().substring(0, 8).toUpperCase()}`,
+          appointmentServices: {
+            create: services.map((s) => ({
+              serviceId: s.id,
+              priceCents: s.priceCents,
+              durationMinutes: s.durationMinutes,
+            })),
+          },
+          statusHistories: {
+            create: {
+              newStatus: AppointmentStatus.PENDING,
+              changedBy: userId,
+              reason: 'Appointment created',
+            },
           },
         },
-      },
-      include: {
-        patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
-        staff: { select: { id: true, fullName: true, title: true } },
-        location: { select: { id: true, name: true } },
-        appointmentServices: { include: { service: true } },
-      },
+        include: {
+          patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+          staff: { select: { id: true, fullName: true, title: true } },
+          location: { select: { id: true, name: true } },
+          appointmentServices: { include: { service: true } },
+        },
+      });
     });
 
     await writeAuditLog({
@@ -340,7 +340,7 @@ export class AppointmentService {
     });
 
     if (overlapping) {
-      throw AppError.conflict('Provider already has an active appointment during the requested time slot');
+      throw AppError.conflict('Selected time is no longer available.');
     }
 
     // Mark current appointment as RESCHEDULED
@@ -642,7 +642,24 @@ export class AppointmentService {
             });
           }
 
-          // 3. Create Appointment using real patientId (UUID)
+          // 3. Atomic Double-Booking Overlap Recheck with FOR UPDATE Lock
+          await tx.$queryRaw`SELECT id FROM staff_profiles WHERE id = ${targetStaff.id} FOR UPDATE`;
+
+          const overlapping: any[] = await tx.$queryRaw`
+            SELECT id FROM appointments 
+            WHERE staff_id = ${targetStaff.id}
+              AND deleted_at IS NULL
+              AND status NOT IN ('CANCELLED', 'NO_SHOW', 'RESCHEDULED')
+              AND start_at < ${endAt}
+              AND end_at > ${startAt}
+            FOR UPDATE
+          `;
+
+          if (overlapping && overlapping.length > 0) {
+            throw AppError.conflict('Selected time is no longer available.');
+          }
+
+          // 4. Create Appointment using real patientId (UUID)
           const appt = await tx.appointment.create({
             data: {
               patient: { connect: { id: patient.id } },
