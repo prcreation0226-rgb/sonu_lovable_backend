@@ -72,7 +72,7 @@ async function resolveTotalServiceDuration(serviceIds: string[]): Promise<number
 /** Fetch Master Clinic Hours for a day-of-week (0=Sun...6=Sat) */
 async function getMasterClinicHours(dayOfWeek: number): Promise<{ startTime: string; endTime: string; isOpen: boolean }> {
   try {
-    const dbRow = await prisma.clinicBookingHours.findFirst({
+    const dbRow = await (prisma as any).clinicBookingHours?.findFirst({
       where: { dayOfWeek },
     });
     if (dbRow) {
@@ -91,7 +91,7 @@ async function getMasterClinicHours(dayOfWeek: number): Promise<{ startTime: str
 /** Check if a date string YYYY-MM-DD is a closed holiday */
 async function isDateHoliday(dateStr: string): Promise<boolean> {
   try {
-    const holiday = await prisma.clinicHoliday.findFirst({
+    const holiday = await (prisma as any).clinicHoliday?.findFirst({
       where: { date: dateStr, isClosed: true },
     });
     return !!holiday;
@@ -311,10 +311,9 @@ router.post('/get-availability', async (req: Request, res: Response, next: NextF
  */
 router.get('/v1/clinic-hours', async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const [hours, holidays] = await Promise.all([
-      prisma.clinicBookingHours.findMany({ orderBy: { dayOfWeek: 'asc' } }),
-      prisma.clinicHoliday.findMany({ orderBy: { date: 'asc' } }),
-    ]);
+    const pAny = prisma as any;
+    const hours = pAny.clinicBookingHours ? await pAny.clinicBookingHours.findMany({ orderBy: { dayOfWeek: 'asc' } }) : [];
+    const holidays = pAny.clinicHoliday ? await pAny.clinicHoliday.findMany({ orderBy: { date: 'asc' } }) : [];
     res.json({ success: true, data: { hours, holidays } });
   } catch (error) {
     next(error);
@@ -331,7 +330,12 @@ router.post('/v1/clinic-hours', authenticate, requireRoles('admin'), async (req:
       res.status(400).json({ success: false, error: 'dayOfWeek is required' });
       return;
     }
-    const updated = await prisma.clinicBookingHours.upsert({
+    const pAny = prisma as any;
+    if (!pAny.clinicBookingHours) {
+      res.status(501).json({ success: false, error: 'Clinic hours model not configured in schema' });
+      return;
+    }
+    const updated = await pAny.clinicBookingHours.upsert({
       where: { dayOfWeek: Number(dayOfWeek) },
       update: {
         startTime: startTime || '09:00',
@@ -361,7 +365,12 @@ router.post('/v1/clinic-holidays', authenticate, requireRoles('admin'), async (r
       res.status(400).json({ success: false, error: 'date (YYYY-MM-DD) is required' });
       return;
     }
-    const holiday = await prisma.clinicHoliday.upsert({
+    const pAny = prisma as any;
+    if (!pAny.clinicHoliday) {
+      res.status(501).json({ success: false, error: 'Clinic holiday model not configured in schema' });
+      return;
+    }
+    const holiday = await pAny.clinicHoliday.upsert({
       where: { date },
       update: { name, isClosed: Boolean(isClosed) },
       create: { date, name, isClosed: Boolean(isClosed) },
@@ -378,7 +387,12 @@ router.post('/v1/clinic-holidays', authenticate, requireRoles('admin'), async (r
 router.delete('/v1/clinic-holidays/:id', authenticate, requireRoles('admin'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
-    await prisma.clinicHoliday.delete({ where: { id: String(id) } });
+    const pAny = prisma as any;
+    if (!pAny.clinicHoliday) {
+      res.status(501).json({ success: false, error: 'Clinic holiday model not configured in schema' });
+      return;
+    }
+    await pAny.clinicHoliday.delete({ where: { id: String(id) } });
     res.json({ success: true, message: 'Holiday deleted successfully' });
   } catch (error) {
     next(error);

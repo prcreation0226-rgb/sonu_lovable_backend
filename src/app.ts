@@ -24,9 +24,24 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+// Helper to validate allowed origins including Netlify deployments
+const isAllowedOrigin = (origin: string | undefined): boolean => {
+  if (!origin) return true;
+  const configured = env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean);
+  if (configured.includes(origin) || configured.includes('*')) return true;
+  if (origin.endsWith('.netlify.app')) return true;
+  return false;
+};
+
 // ---- CORS ----
 app.use(cors({
-  origin: env.CORS_ORIGIN.split(',').map(s => s.trim()),
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
@@ -47,13 +62,12 @@ app.use(compression());
 // ---- CSRF Origin Validation ----
 // Validate Origin header on state-changing requests to prevent CSRF attacks.
 // Only applies to requests with cookies (browser requests).
-const allowedOrigins = env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean);
 app.use((req, res, next) => {
   // Only check state-changing methods
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     const origin = req.headers.origin;
     // If Origin header is present (browser request), validate it
-    if (origin && !allowedOrigins.includes(origin)) {
+    if (origin && !isAllowedOrigin(origin)) {
       return res.status(403).json({
         success: false,
         error: { code: 'CSRF_001', message: 'Origin not allowed' },

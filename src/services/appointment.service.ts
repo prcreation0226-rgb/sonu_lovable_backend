@@ -204,21 +204,66 @@ export class AppointmentService {
       }
     }
 
-    const [total, appointments] = await Promise.all([
-      prisma.appointment.count({ where }),
-      prisma.appointment.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { startAt: 'asc' },
-        include: {
-          patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
-          staff: { select: { id: true, fullName: true, title: true, color: true } },
-          location: { select: { id: true, name: true } },
-          appointmentServices: { include: { service: true } },
-        },
-      }),
-    ]);
+    let total = 0;
+    let appointments: any[] = [];
+
+    try {
+      const [tCount, appts] = await Promise.all([
+        prisma.appointment.count({ where }),
+        prisma.appointment.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { startAt: 'asc' },
+          include: {
+            patient: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            staff: { select: { id: true, fullName: true, title: true, color: true } },
+            location: { select: { id: true, name: true } },
+            appointmentServices: { include: { service: true } },
+          },
+        }),
+      ]);
+      total = tCount;
+      appointments = appts;
+    } catch (err: any) {
+      // Handle orphan records (e.g. patient deleted directly in DB violating FK in Prisma result)
+      if (err?.message?.includes('Inconsistent query result') || err?.code === 'P2023') {
+        console.warn('Prisma patient relation inconsistency detected in getAppointments, falling back to safe query');
+        total = await prisma.appointment.count({ where });
+        const rawAppts = await prisma.appointment.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { startAt: 'asc' },
+          include: {
+            staff: { select: { id: true, fullName: true, title: true, color: true } },
+            location: { select: { id: true, name: true } },
+            appointmentServices: { include: { service: true } },
+          },
+        });
+
+        // Manually fetch patient profiles for valid patient IDs
+        const patientIds = Array.from(new Set(rawAppts.map(a => a.patientId).filter(Boolean)));
+        const patientProfiles = await prisma.patientProfile.findMany({
+          where: { id: { in: patientIds } },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+        });
+        const patientMap = new Map(patientProfiles.map(p => [p.id, p]));
+
+        appointments = rawAppts.map(a => ({
+          ...a,
+          patient: patientMap.get(a.patientId) || {
+            id: a.patientId,
+            firstName: 'Patient',
+            lastName: '(Record Missing)',
+            email: '',
+            phone: '',
+          },
+        }));
+      } else {
+        throw err;
+      }
+    }
 
     return {
       appointments,
