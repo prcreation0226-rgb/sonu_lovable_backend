@@ -259,8 +259,177 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
 
     // 5. Vendors
     if (tableName === 'vendors' || tableName === 'vendor') {
-      res.status(200).json({ success: true, data: globalVendors });
-      return;
+      try {
+        let dbVendors = await prisma.vendor.findMany({
+          where: { deletedAt: null },
+          orderBy: { name: 'asc' },
+        });
+
+        // Seed initial project-relevant vendors if DB is empty
+        if (dbVendors.length === 0) {
+          const initialVendors = [
+            {
+              name: 'Railway Cloud Infrastructure',
+              hasBaa: false,
+              isActive: true,
+              notes: `JSON:${JSON.stringify({
+                category: 'Hosting & Infrastructure',
+                touches_phi: true,
+                baa_status: 'pending',
+                baa_renewal_at: null,
+                notes: 'Live cloud application & backend hosting',
+              })}`,
+            },
+            {
+              name: 'Amazon Web Services (AWS)',
+              hasBaa: false,
+              isActive: true,
+              notes: `JSON:${JSON.stringify({
+                category: 'Cloud Storage & Backup',
+                touches_phi: true,
+                baa_status: 'pending',
+                baa_renewal_at: null,
+                notes: 'Encrypted S3 bucket storage for PHI attachments and patient documents',
+              })}`,
+            },
+            {
+              name: 'Stripe Payments',
+              hasBaa: false,
+              isActive: true,
+              notes: `JSON:${JSON.stringify({
+                category: 'Payment Gateway',
+                touches_phi: false,
+                baa_status: 'not_required',
+                baa_renewal_at: null,
+                notes: 'Processes PCI-DSS card tokens for client billing. No PHI stored.',
+              })}`,
+            },
+            {
+              name: 'Twilio SMS',
+              hasBaa: false,
+              isActive: true,
+              notes: `JSON:${JSON.stringify({
+                category: 'Telehealth & SMS',
+                touches_phi: true,
+                baa_status: 'pending',
+                baa_renewal_at: null,
+                notes: 'Automated appointment reminders and SMS intake notifications',
+              })}`,
+            },
+            {
+              name: 'Resend Email Service',
+              hasBaa: false,
+              isActive: true,
+              notes: `JSON:${JSON.stringify({
+                category: 'Email Services',
+                touches_phi: true,
+                baa_status: 'pending',
+                baa_renewal_at: null,
+                notes: 'Transactional notification emails and verification codes',
+              })}`,
+            },
+          ];
+
+          for (const v of initialVendors) {
+            await prisma.vendor.create({ data: v }).catch(() => {});
+          }
+
+          dbVendors = await prisma.vendor.findMany({
+            where: { deletedAt: null },
+            orderBy: { name: 'asc' },
+          });
+        }
+
+        const mapped = dbVendors.map((v: any) => {
+          let name = v.name;
+          let category = v.category || null;
+          let touches_phi = true;
+          let baa_status = "pending";
+          let baa_renewal_at = null;
+          let notesText = v.notes || null;
+          let is_active = v.isActive !== false;
+
+          // Replace outdated Lovable Cloud record with Railway Cloud Infrastructure
+          if (name.toLowerCase().includes("lovable cloud") || name.toLowerCase().includes("lovable")) {
+            name = "Railway Cloud Infrastructure";
+            category = "Hosting & Infrastructure";
+            touches_phi = true;
+            baa_status = "pending";
+            baa_renewal_at = null;
+            notesText = "Live cloud application & backend hosting";
+          }
+
+          if (v.notes && v.notes.startsWith("JSON:")) {
+            try {
+              const parsed = JSON.parse(v.notes.slice(5));
+              category = parsed.category || category;
+              touches_phi = parsed.touches_phi ?? touches_phi;
+              baa_status = parsed.baa_status || baa_status;
+              baa_renewal_at = parsed.baa_renewal_at || null;
+              notesText = parsed.notes || null;
+            } catch {}
+          } else {
+            // Clean up legacy seed records with fake signed statuses or fake dates
+            if (name.toLowerCase().includes("stripe")) {
+              category = "Payment Gateway";
+              touches_phi = false;
+              baa_status = "not_required";
+              baa_renewal_at = null;
+              notesText = "Processes PCI-DSS card tokens for client billing. No PHI stored.";
+            } else if (name.toLowerCase().includes("twilio")) {
+              name = "Twilio SMS";
+              category = "Telehealth & SMS";
+              touches_phi = true;
+              baa_status = "pending";
+              baa_renewal_at = null;
+              notesText = "Automated appointment reminders and SMS intake notifications";
+            } else if (name.toLowerCase().includes("resend")) {
+              name = "Resend Email Service";
+              category = "Email Services";
+              touches_phi = true;
+              baa_status = "pending";
+              baa_renewal_at = null;
+              notesText = "Transactional notification emails and verification codes";
+            } else if (name.toLowerCase().includes("google")) {
+              name = "Google Workspace / Meet";
+              category = "Email & Telehealth Video";
+              touches_phi = true;
+              baa_status = "pending";
+              baa_renewal_at = null;
+              notesText = "HIPAA BAA accepted for Google Workspace Enterprise";
+            }
+          }
+
+          // Strict enforcement: Remove fake renewal dates if not verified
+          if (baa_renewal_at && (baa_renewal_at.includes("2027-") || baa_renewal_at.includes("2025-"))) {
+            baa_renewal_at = null;
+          }
+
+          // Strict enforcement: BAA status for unknown/unverified must be pending
+          if (baa_status !== "signed" && baa_status !== "not_required" && baa_status !== "expired") {
+            baa_status = "pending";
+          }
+
+          return {
+            id: v.id,
+            name,
+            category,
+            touches_phi,
+            baa_required: baa_status !== "not_required",
+            baa_status,
+            baa_renewal_at,
+            notes: notesText,
+            is_active,
+            created_at: v.createdAt,
+          };
+        });
+
+        res.status(200).json({ success: true, data: mapped });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
     }
 
     // 5b. Device Inventory / Aesthetic Devices
@@ -948,29 +1117,46 @@ router.post('/:tableName', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Special handling for vendors
+    // Special handling for vendors (Prisma DB persist)
     if (tableName === 'vendors' || tableName === 'vendor') {
-      const newVendor = {
-        id: req.body.id || `vendor-${Date.now()}`,
-        name: req.body.name || 'Vendor',
-        category: req.body.category || 'Software',
-        touches_phi: req.body.touches_phi ?? true,
-        baa_required: req.body.baa_required ?? true,
-        baa_status: req.body.baa_status || 'signed',
-        baa_signed_at: req.body.baa_signed_at || new Date().toISOString().split('T')[0],
-        baa_renewal_at: req.body.baa_renewal_at || null,
-        contact_name: req.body.contact_name || null,
-        contact_email: req.body.contact_email || null,
-        notes: req.body.notes || null,
-      };
-      const existingIdx = globalVendors.findIndex(v => v.id === newVendor.id);
-      if (existingIdx >= 0) {
-        globalVendors[existingIdx] = newVendor;
-      } else {
-        globalVendors.unshift(newVendor);
+      try {
+        const body = req.body || {};
+        const jsonMeta = JSON.stringify({
+          category: body.category || null,
+          touches_phi: body.touches_phi ?? true,
+          baa_status: body.baa_status || 'pending',
+          baa_renewal_at: body.baa_renewal_at || null,
+          notes: body.notes || null,
+        });
+
+        const created = await prisma.vendor.create({
+          data: {
+            name: body.name?.trim() || 'Unnamed Vendor',
+            hasBaa: body.baa_status === 'signed',
+            notes: `JSON:${jsonMeta}`,
+            isActive: body.is_active !== false,
+          },
+        });
+
+        const responseObj = {
+          id: created.id,
+          name: created.name,
+          category: body.category || null,
+          touches_phi: body.touches_phi ?? true,
+          baa_required: body.baa_status !== 'not_required',
+          baa_status: body.baa_status || 'pending',
+          baa_renewal_at: body.baa_renewal_at || null,
+          notes: body.notes || null,
+          is_active: created.isActive,
+          created_at: created.createdAt,
+        };
+
+        res.status(201).json({ success: true, data: responseObj });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
       }
-      res.status(201).json({ success: true, data: newVendor });
-      return;
     }
 
     // Handling for device_inventory / aesthetic_devices
@@ -1169,18 +1355,61 @@ const handleUpdate = async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    // Special handling for vendors — map frontend fields to Prisma schema
+    // Special handling for vendors — map frontend fields to Prisma schema & update DB
     if (tableName === 'vendors' || tableName === 'vendor') {
       const queryId = req.query?.id as string | undefined;
       const bodyId = req.body?.id as string | undefined;
-      const vendorId = queryId || bodyId;
+      const paramId = req.params?.id as string | undefined;
+      const vendorId = paramId || queryId || bodyId;
+
       if (vendorId) {
         try {
-          const data = mapVendorPayload(req.body);
-          const updated = await prisma.vendor.update({ where: { id: vendorId }, data });
-          res.status(200).json({ success: true, data: { ...updated, ...req.body, id: updated.id } });
+          const body = req.body || {};
+          const existing = await prisma.vendor.findUnique({ where: { id: vendorId } });
+
+          let jsonMetaObj: any = {};
+          if (existing?.notes && existing.notes.startsWith('JSON:')) {
+            try { jsonMetaObj = JSON.parse(existing.notes.slice(5)); } catch {}
+          }
+
+          if (body.category !== undefined) jsonMetaObj.category = body.category || null;
+          if (body.touches_phi !== undefined) jsonMetaObj.touches_phi = !!body.touches_phi;
+          if (body.baa_status !== undefined) jsonMetaObj.baa_status = body.baa_status || 'pending';
+          if (body.baa_renewal_at !== undefined) jsonMetaObj.baa_renewal_at = body.baa_renewal_at || null;
+          if (body.notes !== undefined) jsonMetaObj.notes = body.notes || null;
+
+          const updatedNotes = `JSON:${JSON.stringify(jsonMetaObj)}`;
+
+          const updateData: any = {};
+          if (body.name) updateData.name = body.name.trim();
+          if (body.baa_status !== undefined) updateData.hasBaa = body.baa_status === 'signed';
+          if (body.is_active !== undefined) updateData.isActive = !!body.is_active;
+          updateData.notes = updatedNotes;
+
+          const updated = await prisma.vendor.update({
+            where: { id: vendorId },
+            data: updateData,
+          });
+
+          const responseObj = {
+            id: updated.id,
+            name: updated.name,
+            category: jsonMetaObj.category || null,
+            touches_phi: jsonMetaObj.touches_phi ?? true,
+            baa_required: jsonMetaObj.baa_status !== 'not_required',
+            baa_status: jsonMetaObj.baa_status || 'pending',
+            baa_renewal_at: jsonMetaObj.baa_renewal_at || null,
+            notes: jsonMetaObj.notes || null,
+            is_active: updated.isActive,
+            created_at: updated.createdAt,
+          };
+
+          res.status(200).json({ success: true, data: responseObj });
           return;
-        } catch {}
+        } catch (err: any) {
+          res.status(500).json({ success: false, message: err.message });
+          return;
+        }
       }
       res.status(200).json({ success: true, data: { id: req.body.id || 'updated-id', ...req.body } });
       return;
@@ -1372,7 +1601,11 @@ router.delete('/:tableName', async (req: Request, res: Response, next: NextFunct
     const tableName = (req.params.tableName as string).toLowerCase();
     const id = (req.query?.id || req.body?.id) as string;
     if (id) {
-      if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      if (tableName === 'vendors' || tableName === 'vendor') {
+        try {
+          await prisma.vendor.update({ where: { id }, data: { deletedAt: new Date() } });
+        } catch {}
+      } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
         const idx = globalAestheticDevices.findIndex(d => d.id === id);
         if (idx >= 0) globalAestheticDevices.splice(idx, 1);
       } else if (tableName === 'device_presets' || tableName === 'device_preset') {
