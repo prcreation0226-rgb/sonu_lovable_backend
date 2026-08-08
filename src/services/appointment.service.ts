@@ -433,8 +433,8 @@ export class AppointmentService {
     const endAt = new Date(startAt.getTime() + service.durationMinutes * 60 * 1000);
     const bookingToken = `BKR-${uuidv4().substring(0, 8).toUpperCase()}`;
 
-    let rawTempPassword: string | undefined = `RKA-${crypto.randomBytes(4).toString('hex')}-${crypto.randomBytes(4).toString('hex')}`;
-    const hashedPassword = await bcrypt.hash(rawTempPassword, 10);
+    let rawTempPassword: string | undefined;
+    let hashedPassword = '';
     let existingAccount = false;
 
     // Retry wrapper: if a concurrent request causes P2002 inside the transaction
@@ -448,6 +448,7 @@ export class AppointmentService {
         // Reset mutable state on each attempt
         existingAccount = false;
         rawTempPassword = `RKA-${crypto.randomBytes(4).toString('hex')}-${crypto.randomBytes(4).toString('hex')}`;
+        hashedPassword = await bcrypt.hash(rawTempPassword, 10);
 
         const result = await prisma.$transaction(async (tx) => {
           // 1. Find existing patient profile by normalized email
