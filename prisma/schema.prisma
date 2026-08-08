@@ -737,7 +737,6 @@ model Appointment {
   invoices            Invoice[]
   payments            Payment[]
   noShowCharge        NoShowCharge?
-  waitlistEntries     WaitlistEntry[]
 
   @@index([startAt])
   @@index([staffId, startAt])
@@ -806,7 +805,6 @@ model StaffTimeOff {
 model WaitlistEntry {
   id            String         @id @default(uuid()) @db.Char(36)
   patientId     String         @map("patient_id") @db.Char(36)
-  appointmentId String?        @map("appointment_id") @db.Char(36)
   serviceId     String?        @map("service_id") @db.Char(36)
   locationId    String?        @map("location_id") @db.Char(36)
   preferredDays String?        @map("preferred_days") @db.VarChar(100)
@@ -815,9 +813,7 @@ model WaitlistEntry {
   createdAt     DateTime       @default(now()) @map("created_at")
 
   patient       PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  appointment   Appointment?   @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
 
-  @@index([appointmentId])
   @@map("waitlist_entries")
 }
 

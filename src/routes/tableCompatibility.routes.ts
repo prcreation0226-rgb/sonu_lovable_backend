@@ -1722,7 +1722,6 @@ const handleUpdateById = async (req: Request, res: Response, next: NextFunction)
           data: {
             ...(req.body.status !== undefined && { status: req.body.status }),
             ...(req.body.notes !== undefined && { notes: req.body.notes }),
-            ...(req.body.appointmentId !== undefined && { appointmentId: req.body.appointmentId }),
           },
         });
         res.status(200).json({ success: true, data: updated });
