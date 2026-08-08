@@ -38,7 +38,7 @@ export const PublicBookingRequestSchema = z.object({
   lastName: z.string().trim().min(1, 'Last name required').max(100),
   email: z.string().trim().toLowerCase().email('Invalid email'),
   phone: z.string().min(10, 'Valid phone number required').max(20),
-  staffId: z.string().uuid('Invalid staff ID'),
+  staffId: z.string().uuid('Invalid staff ID').or(z.literal('any-available')).or(z.literal('00000000-0000-0000-0000-000000000000')),
   locationId: z.string().uuid('Invalid location ID'),
   serviceId: z.string().uuid('Invalid service ID'),
   startAt: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)),

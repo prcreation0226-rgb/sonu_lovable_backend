@@ -460,6 +460,24 @@ export class AppointmentService {
     const service = await prisma.service.findFirst({ where: { id: input.serviceId, deletedAt: null } });
     if (!service) throw AppError.notFound('Service');
 
+    // 1. Resolve staffId with fallback
+    let staffId = input.staffId;
+    let staff = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
+    if (!staff) {
+      staff = await prisma.staffProfile.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (!staff) throw AppError.notFound('Staff Profile');
+      staffId = staff.id;
+    }
+
+    // 2. Resolve locationId with fallback
+    let locationId = input.locationId;
+    let location = await prisma.location.findFirst({ where: { id: locationId, deletedAt: null } });
+    if (!location) {
+      location = await prisma.location.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (!location) throw AppError.notFound('Location');
+      locationId = location.id;
+    }
+
     const startAt = new Date(input.startAt);
     const endAt = new Date(startAt.getTime() + service.durationMinutes * 60 * 1000);
     const bookingToken = `BKR-${uuidv4().substring(0, 8).toUpperCase()}`;
@@ -566,8 +584,8 @@ export class AppointmentService {
           const appt = await tx.appointment.create({
             data: {
               patient: { connect: { id: patient.id } },
-              location: { connect: { id: input.locationId } },
-              staff: { connect: { id: input.staffId } },
+              location: { connect: { id: locationId } },
+              staff: { connect: { id: staffId } },
               startAt,
               endAt,
               status: AppointmentStatus.PENDING,
