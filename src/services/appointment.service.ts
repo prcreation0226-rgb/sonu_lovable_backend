@@ -161,15 +161,46 @@ export class AppointmentService {
       deletedAt: null,
     };
 
-    if (filters.locationId) where.locationId = filters.locationId;
-    if (filters.staffId) where.staffId = filters.staffId;
+    if (filters.locationId && filters.locationId !== 'all') where.locationId = filters.locationId;
+    if (filters.staffId && filters.staffId !== 'all') where.staffId = filters.staffId;
     if (filters.patientId) where.patientId = filters.patientId;
-    if (filters.status) where.status = filters.status;
+
+    if (filters.status) {
+      const rawStatus = String(filters.status).trim().toUpperCase();
+      const statusMap: Record<string, AppointmentStatus> = {
+        PENDING: AppointmentStatus.PENDING,
+        APPROVED: AppointmentStatus.CONFIRMED,
+        CONFIRMED: AppointmentStatus.CONFIRMED,
+        CHECKED_IN: AppointmentStatus.CHECKED_IN,
+        ARRIVED: AppointmentStatus.CHECKED_IN,
+        IN_PROGRESS: AppointmentStatus.IN_PROGRESS,
+        COMPLETED: AppointmentStatus.COMPLETED,
+        CANCELLED: AppointmentStatus.CANCELLED,
+        DENIED: AppointmentStatus.CANCELLED,
+        NO_SHOW: AppointmentStatus.NO_SHOW,
+        RESCHEDULED: AppointmentStatus.RESCHEDULED,
+      };
+
+      if (statusMap[rawStatus]) {
+        where.status = statusMap[rawStatus];
+      } else if (Object.values(AppointmentStatus).includes(rawStatus as any)) {
+        where.status = rawStatus as AppointmentStatus;
+      }
+    }
 
     if (filters.startDate || filters.endDate) {
-      where.startAt = {};
-      if (filters.startDate) where.startAt.gte = new Date(filters.startDate);
-      if (filters.endDate) where.startAt.lte = new Date(filters.endDate);
+      const startAtObj: any = {};
+      if (filters.startDate) {
+        const d = new Date(filters.startDate);
+        if (!isNaN(d.getTime())) startAtObj.gte = d;
+      }
+      if (filters.endDate) {
+        const d = new Date(filters.endDate);
+        if (!isNaN(d.getTime())) startAtObj.lte = d;
+      }
+      if (Object.keys(startAtObj).length > 0) {
+        where.startAt = startAtObj;
+      }
     }
 
     const [total, appointments] = await Promise.all([
@@ -433,8 +464,8 @@ export class AppointmentService {
     const endAt = new Date(startAt.getTime() + service.durationMinutes * 60 * 1000);
     const bookingToken = `BKR-${uuidv4().substring(0, 8).toUpperCase()}`;
 
-    let rawTempPassword: string | undefined = `RKA-${crypto.randomBytes(4).toString('hex')}-${crypto.randomBytes(4).toString('hex')}`;
-    const hashedPassword = await bcrypt.hash(rawTempPassword, 10);
+    let rawTempPassword: string | undefined;
+    let hashedPassword = '';
     let existingAccount = false;
 
     // Retry wrapper: if a concurrent request causes P2002 inside the transaction
@@ -448,6 +479,7 @@ export class AppointmentService {
         // Reset mutable state on each attempt
         existingAccount = false;
         rawTempPassword = `RKA-${crypto.randomBytes(4).toString('hex')}-${crypto.randomBytes(4).toString('hex')}`;
+        hashedPassword = await bcrypt.hash(rawTempPassword, 10);
 
         const result = await prisma.$transaction(async (tx) => {
           // 1. Find existing patient profile by normalized email
