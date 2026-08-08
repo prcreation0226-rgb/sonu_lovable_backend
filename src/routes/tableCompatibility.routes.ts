@@ -1747,18 +1747,29 @@ router.put('/:tableName', handleUpdate);
  */
 router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tableName = (req.params.tableName as string).toLowerCase();
-    const id = req.params.id;
-    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
-      const idx = globalAestheticDevices.findIndex(d => d.id === id);
+    const tableName = String(req.params.tableName || '').toLowerCase();
+    const rawTarget = req.params.id;
+    const target = Array.isArray(rawTarget) ? String(rawTarget[0]) : String(rawTarget || '');
+
+    if (tableName === 'client_profiles' || tableName === 'patient_profiles' || tableName === 'patients' || tableName === 'patient' || tableName === 'users' || tableName === 'user' || tableName === 'imported_clients' || tableName === 'imported_client') {
+      if (target.includes('@')) {
+        const em = target.toLowerCase().trim();
+        await prisma.patientProfile.deleteMany({ where: { email: em } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { email: em } }).catch(() => {});
+      } else {
+        await prisma.patientProfile.deleteMany({ where: { id: target } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: target } }).catch(() => {});
+      }
+    } else if (tableName === 'appointments' || tableName === 'appointment') {
+      await prisma.appointment.deleteMany({ where: { id: target } }).catch(() => {});
+    } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      const idx = globalAestheticDevices.findIndex(d => d.id === target);
       if (idx >= 0) globalAestheticDevices.splice(idx, 1);
     } else if (tableName === 'device_presets' || tableName === 'device_preset') {
-      const idx = globalDevicePresets.findIndex(p => p.id === id);
+      const idx = globalDevicePresets.findIndex(p => p.id === target);
       if (idx >= 0) globalDevicePresets.splice(idx, 1);
     } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
-      try {
-        await prisma.waitlistEntry.delete({ where: { id: id as string } });
-      } catch {}
+      await prisma.waitlistEntry.deleteMany({ where: { id: target } }).catch(() => {});
     }
     res.status(200).json({ success: true, data: { deleted: true } });
   } catch (error) {
@@ -1768,23 +1779,45 @@ router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextF
 
 router.delete('/:tableName', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tableName = (req.params.tableName as string).toLowerCase();
-    const id = (req.query?.id || req.body?.id) as string;
-    if (id) {
-      if (tableName === 'vendors' || tableName === 'vendor') {
-        try {
-          await prisma.vendor.update({ where: { id }, data: { deletedAt: new Date() } });
-        } catch {}
-      } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
-        const idx = globalAestheticDevices.findIndex(d => d.id === id);
+    const tableName = String(req.params.tableName || '').toLowerCase();
+    const rawQueryEmail = req.query?.email || req.body?.email || req.query?.client_email || req.body?.client_email;
+    const rawQueryId = req.query?.id || req.body?.id;
+
+    const queryEmail = Array.isArray(rawQueryEmail) ? String(rawQueryEmail[0]) : String(rawQueryEmail || '');
+    const queryId = Array.isArray(rawQueryId) ? String(rawQueryId[0]) : String(rawQueryId || '');
+
+    const targetEmail = queryEmail.includes('@') ? queryEmail.toLowerCase().trim() : undefined;
+    const targetId = queryId.trim() ? queryId.trim() : undefined;
+
+    if (tableName === 'client_profiles' || tableName === 'patient_profiles' || tableName === 'patients' || tableName === 'patient' || tableName === 'users' || tableName === 'user' || tableName === 'imported_clients' || tableName === 'imported_client') {
+      if (targetEmail) {
+        await prisma.patientProfile.deleteMany({ where: { email: targetEmail } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { email: targetEmail } }).catch(() => {});
+      } else if (targetId) {
+        await prisma.patientProfile.deleteMany({ where: { id: targetId } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: targetId } }).catch(() => {});
+      }
+    } else if (tableName === 'appointments' || tableName === 'appointment') {
+      if (targetId) {
+        await prisma.appointment.deleteMany({ where: { id: targetId } }).catch(() => {});
+      }
+    } else if (tableName === 'vendors' || tableName === 'vendor') {
+      if (targetId) {
+        await prisma.vendor.update({ where: { id: targetId }, data: { deletedAt: new Date() } }).catch(() => {});
+      }
+    } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      if (targetId) {
+        const idx = globalAestheticDevices.findIndex(d => d.id === targetId);
         if (idx >= 0) globalAestheticDevices.splice(idx, 1);
-      } else if (tableName === 'device_presets' || tableName === 'device_preset') {
-        const idx = globalDevicePresets.findIndex(p => p.id === id);
+      }
+    } else if (tableName === 'device_presets' || tableName === 'device_preset') {
+      if (targetId) {
+        const idx = globalDevicePresets.findIndex(p => p.id === targetId);
         if (idx >= 0) globalDevicePresets.splice(idx, 1);
-      } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
-        try {
-          await prisma.waitlistEntry.delete({ where: { id: id as string } });
-        } catch {}
+      }
+    } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      if (targetId) {
+        await prisma.waitlistEntry.deleteMany({ where: { id: targetId } }).catch(() => {});
       }
     }
     res.status(200).json({ success: true, data: { deleted: true } });
