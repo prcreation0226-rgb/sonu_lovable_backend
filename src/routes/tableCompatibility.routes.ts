@@ -432,6 +432,69 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // 5a. Client Profiles / Patient Profiles / Users GET handler
+    if (
+      tableName === 'client_profiles' ||
+      tableName === 'patient_profiles' ||
+      tableName === 'patients' ||
+      tableName === 'patient' ||
+      tableName === 'users' ||
+      tableName === 'user'
+    ) {
+      try {
+        const [users, patientProfiles] = await Promise.all([
+          prisma.user.findMany({
+            where: { deletedAt: null },
+            select: { id: true, email: true, createdAt: true, isActive: true },
+          }),
+          prisma.patientProfile.findMany({
+            where: { deletedAt: null },
+            select: { id: true, userId: true, firstName: true, lastName: true, email: true, phone: true, dob: true, createdAt: true },
+          }),
+        ]);
+
+        const map = new Map<string, any>();
+
+        patientProfiles.forEach((p) => {
+          const email = (p.email || '').toLowerCase().trim();
+          if (email) {
+            map.set(email, {
+              id: p.id,
+              email: p.email,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              phone: p.phone,
+              dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : null,
+              is_lead: false,
+              created_at: p.createdAt,
+            });
+          }
+        });
+
+        users.forEach((u) => {
+          const email = (u.email || '').toLowerCase().trim();
+          if (email && !map.has(email)) {
+            map.set(email, {
+              id: u.id,
+              email: u.email,
+              first_name: '',
+              last_name: '',
+              phone: null,
+              dob: null,
+              is_lead: false,
+              created_at: u.createdAt,
+            });
+          }
+        });
+
+        res.status(200).json({ success: true, data: Array.from(map.values()) });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
     // 5b. Device Inventory / Aesthetic Devices
     if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
       let dbMapped: any[] = [];
