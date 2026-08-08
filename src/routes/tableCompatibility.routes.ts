@@ -449,7 +449,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
           }),
           prisma.patientProfile.findMany({
             where: { deletedAt: null },
-            select: { id: true, userId: true, firstName: true, lastName: true, email: true, phone: true, dob: true, createdAt: true },
+            select: { id: true, userId: true, firstName: true, lastName: true, email: true, phone: true, dateOfBirth: true, createdAt: true },
           }),
         ]);
 
@@ -464,7 +464,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
               first_name: p.firstName,
               last_name: p.lastName,
               phone: p.phone,
-              dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : null,
+              dob: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : null,
               is_lead: false,
               created_at: p.createdAt,
             });
