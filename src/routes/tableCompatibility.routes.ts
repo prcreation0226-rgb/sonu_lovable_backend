@@ -432,6 +432,69 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // 5a. Client Profiles / Patient Profiles / Users GET handler
+    if (
+      tableName === 'client_profiles' ||
+      tableName === 'patient_profiles' ||
+      tableName === 'patients' ||
+      tableName === 'patient' ||
+      tableName === 'users' ||
+      tableName === 'user'
+    ) {
+      try {
+        const [users, patientProfiles] = await Promise.all([
+          prisma.user.findMany({
+            where: { deletedAt: null },
+            select: { id: true, email: true, createdAt: true, isActive: true },
+          }),
+          prisma.patientProfile.findMany({
+            where: { deletedAt: null },
+            select: { id: true, userId: true, firstName: true, lastName: true, email: true, phone: true, dateOfBirth: true, createdAt: true },
+          }),
+        ]);
+
+        const map = new Map<string, any>();
+
+        patientProfiles.forEach((p) => {
+          const email = (p.email || '').toLowerCase().trim();
+          if (email) {
+            map.set(email, {
+              id: p.id,
+              email: p.email,
+              first_name: p.firstName,
+              last_name: p.lastName,
+              phone: p.phone,
+              dob: p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : null,
+              is_lead: false,
+              created_at: p.createdAt,
+            });
+          }
+        });
+
+        users.forEach((u) => {
+          const email = (u.email || '').toLowerCase().trim();
+          if (email && !map.has(email)) {
+            map.set(email, {
+              id: u.id,
+              email: u.email,
+              first_name: '',
+              last_name: '',
+              phone: null,
+              dob: null,
+              is_lead: false,
+              created_at: u.createdAt,
+            });
+          }
+        });
+
+        res.status(200).json({ success: true, data: Array.from(map.values()) });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
     // 5b. Device Inventory / Aesthetic Devices
     if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
       let dbMapped: any[] = [];
@@ -719,6 +782,32 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
         orderBy: { name: 'asc' },
       });
       res.status(200).json({ success: true, data: locations });
+      return;
+    }
+
+    // Waitlist Entries
+    if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      const entries = await prisma.waitlistEntry.findMany({
+        include: {
+          patient: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      const mapped = entries.map(e => ({
+        id: e.id,
+        patient_id: e.patientId,
+        service_id: e.serviceId,
+        location_id: e.locationId,
+        preferred_days: e.preferredDays,
+        notes: e.notes,
+        status: e.status,
+        created_at: e.createdAt,
+        client_first_name: e.patient?.firstName || '',
+        client_last_name: e.patient?.lastName || '',
+        client_email: e.patient?.email || '',
+        client_phone: e.patient?.phone || '',
+      }));
+      res.status(200).json({ success: true, data: mapped });
       return;
     }
 
@@ -1597,6 +1686,23 @@ const handleUpdateById = async (req: Request, res: Response, next: NextFunction)
       return;
     }
 
+    if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      try {
+        const updated = await prisma.waitlistEntry.update({
+          where: { id },
+          data: {
+            ...(req.body.status !== undefined && { status: req.body.status }),
+            ...(req.body.notes !== undefined && { notes: req.body.notes }),
+          },
+        });
+        res.status(200).json({ success: true, data: updated });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
     // Dynamic Prisma Model Update by ID
     const modelName = Object.keys(prisma).find(
       (key) => key.toLowerCase() === tableName || key.toLowerCase() === tableName.replace(/s$/, '')
@@ -1641,17 +1747,29 @@ router.put('/:tableName', handleUpdate);
  */
 router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tableName = (req.params.tableName as string).toLowerCase();
-    const id = req.params.id;
-    if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
-      const idx = globalAestheticDevices.findIndex(d => d.id === id);
+    const tableName = String(req.params.tableName || '').toLowerCase();
+    const rawTarget = req.params.id;
+    const target = Array.isArray(rawTarget) ? String(rawTarget[0]) : String(rawTarget || '');
+
+    if (tableName === 'client_profiles' || tableName === 'patient_profiles' || tableName === 'patients' || tableName === 'patient' || tableName === 'users' || tableName === 'user' || tableName === 'imported_clients' || tableName === 'imported_client') {
+      if (target.includes('@')) {
+        const em = target.toLowerCase().trim();
+        await prisma.patientProfile.deleteMany({ where: { email: em } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { email: em } }).catch(() => {});
+      } else {
+        await prisma.patientProfile.deleteMany({ where: { id: target } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: target } }).catch(() => {});
+      }
+    } else if (tableName === 'appointments' || tableName === 'appointment') {
+      await prisma.appointment.deleteMany({ where: { id: target } }).catch(() => {});
+    } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      const idx = globalAestheticDevices.findIndex(d => d.id === target);
       if (idx >= 0) globalAestheticDevices.splice(idx, 1);
     } else if (tableName === 'device_presets' || tableName === 'device_preset') {
-      const idx = globalDevicePresets.findIndex(p => p.id === id);
+      const idx = globalDevicePresets.findIndex(p => p.id === target);
       if (idx >= 0) globalDevicePresets.splice(idx, 1);
-    } else if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
-      const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
-      if (idx >= 0) globalDeviceMaintenance.splice(idx, 1);
+    } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      await prisma.waitlistEntry.deleteMany({ where: { id: target } }).catch(() => {});
     }
     res.status(200).json({ success: true, data: { deleted: true } });
   } catch (error) {
@@ -1661,22 +1779,45 @@ router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextF
 
 router.delete('/:tableName', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tableName = (req.params.tableName as string).toLowerCase();
-    const id = (req.query?.id || req.body?.id) as string;
-    if (id) {
-      if (tableName === 'vendors' || tableName === 'vendor') {
-        try {
-          await prisma.vendor.update({ where: { id }, data: { deletedAt: new Date() } });
-        } catch {}
-      } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
-        const idx = globalAestheticDevices.findIndex(d => d.id === id);
+    const tableName = String(req.params.tableName || '').toLowerCase();
+    const rawQueryEmail = req.query?.email || req.body?.email || req.query?.client_email || req.body?.client_email;
+    const rawQueryId = req.query?.id || req.body?.id;
+
+    const queryEmail = Array.isArray(rawQueryEmail) ? String(rawQueryEmail[0]) : String(rawQueryEmail || '');
+    const queryId = Array.isArray(rawQueryId) ? String(rawQueryId[0]) : String(rawQueryId || '');
+
+    const targetEmail = queryEmail.includes('@') ? queryEmail.toLowerCase().trim() : undefined;
+    const targetId = queryId.trim() ? queryId.trim() : undefined;
+
+    if (tableName === 'client_profiles' || tableName === 'patient_profiles' || tableName === 'patients' || tableName === 'patient' || tableName === 'users' || tableName === 'user' || tableName === 'imported_clients' || tableName === 'imported_client') {
+      if (targetEmail) {
+        await prisma.patientProfile.deleteMany({ where: { email: targetEmail } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { email: targetEmail } }).catch(() => {});
+      } else if (targetId) {
+        await prisma.patientProfile.deleteMany({ where: { id: targetId } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: targetId } }).catch(() => {});
+      }
+    } else if (tableName === 'appointments' || tableName === 'appointment') {
+      if (targetId) {
+        await prisma.appointment.deleteMany({ where: { id: targetId } }).catch(() => {});
+      }
+    } else if (tableName === 'vendors' || tableName === 'vendor') {
+      if (targetId) {
+        await prisma.vendor.update({ where: { id: targetId }, data: { deletedAt: new Date() } }).catch(() => {});
+      }
+    } else if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
+      if (targetId) {
+        const idx = globalAestheticDevices.findIndex(d => d.id === targetId);
         if (idx >= 0) globalAestheticDevices.splice(idx, 1);
-      } else if (tableName === 'device_presets' || tableName === 'device_preset') {
-        const idx = globalDevicePresets.findIndex(p => p.id === id);
+      }
+    } else if (tableName === 'device_presets' || tableName === 'device_preset') {
+      if (targetId) {
+        const idx = globalDevicePresets.findIndex(p => p.id === targetId);
         if (idx >= 0) globalDevicePresets.splice(idx, 1);
-      } else if (tableName === 'device_maintenance' || tableName === 'maintenance_logs' || tableName === 'maintenance_records') {
-        const idx = globalDeviceMaintenance.findIndex(m => m.id === id);
-        if (idx >= 0) globalDeviceMaintenance.splice(idx, 1);
+      }
+    } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
+      if (targetId) {
+        await prisma.waitlistEntry.deleteMany({ where: { id: targetId } }).catch(() => {});
       }
     }
     res.status(200).json({ success: true, data: { deleted: true } });
