@@ -442,7 +442,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       tableName === 'user'
     ) {
       try {
-        const [users, patientProfiles] = await Promise.all([
+        const [users, patientProfiles, staffProfiles] = await Promise.all([
           prisma.user.findMany({
             where: { deletedAt: null },
             select: { id: true, email: true, createdAt: true, isActive: true },
@@ -451,13 +451,38 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
             where: { deletedAt: null },
             select: { id: true, userId: true, firstName: true, lastName: true, email: true, phone: true, dateOfBirth: true, createdAt: true },
           }),
+          prisma.staffProfile.findMany({
+            where: { deletedAt: null },
+            select: { email: true },
+          }),
         ]);
+
+        const staffEmailsSet = new Set(staffProfiles.map((s) => (s.email || '').toLowerCase().trim()).filter(Boolean));
+        const knownStaffEmails = new Set([
+          'admin@gmail.com',
+          'frontdesk@gmail.com',
+          'nurse@gmail.com',
+          'medical@gmail.com',
+          'injector@gmail.com',
+          'nursepractitioner@gmail.com',
+          'medicaldirector@gmail.com',
+          'security@gmail.com',
+          'thor@gmail.com',
+          'thomas@gmail.com',
+        ]);
+
+        const isStaffEmail = (email: string) => {
+          const em = email.toLowerCase().trim();
+          if (staffEmailsSet.has(em) || knownStaffEmails.has(em)) return true;
+          if (em.endsWith('@radiantilyk.com') || em.startsWith('phase1-')) return true;
+          return false;
+        };
 
         const map = new Map<string, any>();
 
         patientProfiles.forEach((p) => {
           const email = (p.email || '').toLowerCase().trim();
-          if (email) {
+          if (email && !isStaffEmail(email)) {
             map.set(email, {
               id: p.id,
               email: p.email,
@@ -473,7 +498,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
 
         users.forEach((u) => {
           const email = (u.email || '').toLowerCase().trim();
-          if (email && !map.has(email)) {
+          if (email && !isStaffEmail(email) && !map.has(email)) {
             map.set(email, {
               id: u.id,
               email: u.email,
