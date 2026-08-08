@@ -131,6 +131,67 @@ export class AuthService {
             },
           },
         });
+      } else {
+        // Auto-provision User if PatientProfile exists with this email
+        const patientProfile = await prisma.patientProfile.findFirst({
+          where: { email: cleanEmail, deletedAt: null },
+        });
+
+        if (patientProfile && password) {
+          const passwordHash = await bcrypt.hash(password, 10);
+          let patientRole = await prisma.role.findFirst({ where: { name: 'patient' } });
+          if (!patientRole) {
+            try {
+              patientRole = await prisma.role.create({
+                data: { name: 'patient', description: 'patient role' },
+              });
+            } catch {
+              patientRole = await prisma.role.findFirst({ where: { name: 'patient' } });
+            }
+          }
+
+          const newUser = await prisma.user.upsert({
+            where: { email: cleanEmail },
+            update: {
+              deletedAt: null,
+              isActive: true,
+              passwordHash,
+            },
+            create: {
+              email: cleanEmail,
+              passwordHash,
+              isActive: true,
+              mustChangePassword: true,
+            },
+          });
+
+          if (patientRole) {
+            await prisma.userRole.upsert({
+              where: {
+                userId_roleId: { userId: newUser.id, roleId: patientRole.id }
+              },
+              update: {},
+              create: {
+                userId: newUser.id,
+                roleId: patientRole.id,
+              },
+            }).catch(() => {});
+          }
+
+          await prisma.patientProfile.update({
+            where: { id: patientProfile.id },
+            data: { userId: newUser.id },
+          });
+
+          user = await prisma.user.findFirst({
+            where: { id: newUser.id },
+            include: {
+              userRoles: {
+                include: { role: true },
+              },
+            },
+          });
+        }
       }
     }
 
