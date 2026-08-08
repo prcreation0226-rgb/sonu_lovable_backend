@@ -161,15 +161,46 @@ export class AppointmentService {
       deletedAt: null,
     };
 
-    if (filters.locationId) where.locationId = filters.locationId;
-    if (filters.staffId) where.staffId = filters.staffId;
+    if (filters.locationId && filters.locationId !== 'all') where.locationId = filters.locationId;
+    if (filters.staffId && filters.staffId !== 'all') where.staffId = filters.staffId;
     if (filters.patientId) where.patientId = filters.patientId;
-    if (filters.status) where.status = filters.status;
+
+    if (filters.status) {
+      const rawStatus = String(filters.status).trim().toUpperCase();
+      const statusMap: Record<string, AppointmentStatus> = {
+        PENDING: AppointmentStatus.PENDING,
+        APPROVED: AppointmentStatus.CONFIRMED,
+        CONFIRMED: AppointmentStatus.CONFIRMED,
+        CHECKED_IN: AppointmentStatus.CHECKED_IN,
+        ARRIVED: AppointmentStatus.CHECKED_IN,
+        IN_PROGRESS: AppointmentStatus.IN_PROGRESS,
+        COMPLETED: AppointmentStatus.COMPLETED,
+        CANCELLED: AppointmentStatus.CANCELLED,
+        DENIED: AppointmentStatus.CANCELLED,
+        NO_SHOW: AppointmentStatus.NO_SHOW,
+        RESCHEDULED: AppointmentStatus.RESCHEDULED,
+      };
+
+      if (statusMap[rawStatus]) {
+        where.status = statusMap[rawStatus];
+      } else if (Object.values(AppointmentStatus).includes(rawStatus as any)) {
+        where.status = rawStatus as AppointmentStatus;
+      }
+    }
 
     if (filters.startDate || filters.endDate) {
-      where.startAt = {};
-      if (filters.startDate) where.startAt.gte = new Date(filters.startDate);
-      if (filters.endDate) where.startAt.lte = new Date(filters.endDate);
+      const startAtObj: any = {};
+      if (filters.startDate) {
+        const d = new Date(filters.startDate);
+        if (!isNaN(d.getTime())) startAtObj.gte = d;
+      }
+      if (filters.endDate) {
+        const d = new Date(filters.endDate);
+        if (!isNaN(d.getTime())) startAtObj.lte = d;
+      }
+      if (Object.keys(startAtObj).length > 0) {
+        where.startAt = startAtObj;
+      }
     }
 
     const [total, appointments] = await Promise.all([
@@ -428,6 +459,24 @@ export class AppointmentService {
 
     const service = await prisma.service.findFirst({ where: { id: input.serviceId, deletedAt: null } });
     if (!service) throw AppError.notFound('Service');
+
+    // 1. Resolve staffId with fallback
+    let staffId = input.staffId;
+    let staff = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
+    if (!staff) {
+      staff = await prisma.staffProfile.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (!staff) throw AppError.notFound('Staff Profile');
+      staffId = staff.id;
+    }
+
+    // 2. Resolve locationId with fallback
+    let locationId = input.locationId;
+    let location = await prisma.location.findFirst({ where: { id: locationId, deletedAt: null } });
+    if (!location) {
+      location = await prisma.location.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (!location) throw AppError.notFound('Location');
+      locationId = location.id;
+    }
 
     const startAt = new Date(input.startAt);
     const endAt = new Date(startAt.getTime() + service.durationMinutes * 60 * 1000);
