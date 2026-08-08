@@ -461,8 +461,8 @@ export class AppointmentService {
     if (!service) throw AppError.notFound('Service');
 
     // 1. Resolve staffId with fallback
-    let staffId = input.staffId;
-    let staff = await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } });
+    let staffId = input.staffId || undefined;
+    let staff = staffId ? await prisma.staffProfile.findFirst({ where: { id: staffId, deletedAt: null } }) : null;
     if (!staff) {
       staff = await prisma.staffProfile.findFirst({ where: { deletedAt: null, isActive: true } });
       if (!staff) throw AppError.notFound('Staff Profile');
@@ -470,8 +470,8 @@ export class AppointmentService {
     }
 
     // 2. Resolve locationId with fallback
-    let locationId = input.locationId;
-    let location = await prisma.location.findFirst({ where: { id: locationId, deletedAt: null } });
+    let locationId = input.locationId || undefined;
+    let location = locationId ? await prisma.location.findFirst({ where: { id: locationId, deletedAt: null } }) : null;
     if (!location) {
       location = await prisma.location.findFirst({ where: { deletedAt: null, isActive: true } });
       if (!location) throw AppError.notFound('Location');
@@ -581,9 +581,9 @@ export class AppointmentService {
           }
 
           // 2b. Safely resolve locationId and staffId (fallback to first available or create default if missing)
-          let targetLocation = await tx.location.findFirst({
-            where: { id: input.locationId, deletedAt: null },
-          });
+          let targetLocation = input.locationId
+            ? await tx.location.findFirst({ where: { id: input.locationId, deletedAt: null } })
+            : null;
           if (!targetLocation) {
             targetLocation = await tx.location.findFirst({
               where: { isActive: true, deletedAt: null },
@@ -605,18 +605,29 @@ export class AppointmentService {
             });
           }
 
-          let targetStaff = await tx.staffProfile.findFirst({
-            where: { id: input.staffId, deletedAt: null },
-          });
+          let targetStaff = input.staffId
+            ? await tx.staffProfile.findFirst({ where: { id: input.staffId, deletedAt: null } })
+            : null;
           if (!targetStaff) {
             targetStaff = await tx.staffProfile.findFirst({
               where: { isActive: true, deletedAt: null },
             });
           }
           if (!targetStaff) {
+            let defaultUser = await tx.user.findFirst({ where: { email: 'provider@radiantilyk.com' } });
+            if (!defaultUser) {
+              defaultUser = await tx.user.create({
+                data: {
+                  email: 'provider@radiantilyk.com',
+                  passwordHash: await bcrypt.hash('Provider123!', 10),
+                  isActive: true,
+                },
+              });
+            }
             targetStaff = await tx.staffProfile.create({
               data: {
                 id: input.staffId && input.staffId.length === 36 ? input.staffId : undefined,
+                userId: defaultUser.id,
                 fullName: 'Nurse Practitioner Provider',
                 title: 'Nurse Practitioner & Lead Injector',
                 email: 'provider@radiantilyk.com',
