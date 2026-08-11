@@ -12,6 +12,7 @@ export interface ServiceData {
   priceNote: string | null;
   promoGroup?: string | null;
   displayOrder: number;
+  isActive?: boolean; // defaults to true when omitted
 }
 
 export interface CategoryData {
@@ -301,6 +302,7 @@ export const CLIENT_SERVICE_CATALOG: CategoryData[] = [
         priceNote: 'full face · neck $950 · face & neck $2,300',
         displayOrder: 2,
       },
+      // Everesse services — DEACTIVATED (historical records preserved)
       {
         name: 'Everesse by Volnewmer — Full Face',
         slug: 'skin-tightening-everesse-full-face-standard',
@@ -309,63 +311,70 @@ export const CLIENT_SERVICE_CATALOG: CategoryData[] = [
         priceCents: 75000,
         priceNote: 'full face $750 · full face & neck $950 · neck $350 · pkg of 2 available',
         displayOrder: 3,
+        isActive: false,
       },
       {
         name: 'Everesse by Volnewmer — Under Eyes',
         slug: 'skin-tightening-everesse-under-eyes-july-promo',
-        description: 'July-only Everesse by Volnewmer (monopolar RF skin tightening) — under-eye area. Limited to 10 spots total across all Everesse promo services. Online booking only — phone/text bookings not accepted.',
+        description: 'July-only Everesse by Volnewmer (monopolar RF skin tightening) — under-eye area.',
         durationMinutes: 30,
         priceCents: 25000,
         priceNote: 'July promo · $250 (under eyes)',
         promoGroup: 'July Promo',
         displayOrder: 4,
+        isActive: false,
       },
       {
         name: 'Everesse by Volnewmer — Neck / Jawline',
         slug: 'skin-tightening-everesse-neck-jawline-july-promo',
-        description: 'July-only Everesse by Volnewmer (monopolar RF skin tightening) — neck and jawline. Limited to 10 spots total across all Everesse promo services. Online booking only — phone/text bookings not accepted.',
+        description: 'July-only Everesse by Volnewmer (monopolar RF skin tightening) — neck and jawline.',
         durationMinutes: 60,
         priceCents: 25000,
         priceNote: 'July promo · $250 (neck/jawline)',
         promoGroup: 'July Promo',
         displayOrder: 5,
+        isActive: false,
       },
       {
         name: 'Everesse by Volnewmer — Full Face',
         slug: 'skin-tightening-everesse-full-face-july-promo',
-        description: 'July-only Everesse by Volnewmer (monopolar RF skin tightening) — full face. Limited to 10 spots total across all Everesse promo services. Online booking only — phone/text bookings not accepted.',
+        description: 'July-only Everesse by Volnewmer (monopolar RF skin tightening) — full face.',
         durationMinutes: 60,
         priceCents: 35000,
         priceNote: 'July promo · $350 (full face)',
         promoGroup: 'July Promo',
         displayOrder: 6,
+        isActive: false,
       },
       {
         name: 'Everesse by Volnewmer — Full Face · Package of 2',
         slug: 'skin-tightening-everesse-full-face-pkg-2',
-        description: 'Two-session Volnewmer (Everesse) full face package. Sessions spaced 4–6 weeks apart for compounding lift and tightening.',
+        description: 'Two-session Volnewmer (Everesse) full face package.',
         durationMinutes: 60,
         priceCents: 140000,
         priceNote: '$1,400 (save $100) · 2 sessions · $700/session',
         displayOrder: 7,
+        isActive: false,
       },
       {
         name: 'Everesse by Volnewmer — Full Face · Package of 3',
         slug: 'skin-tightening-everesse-full-face-pkg-3',
-        description: 'Three-session Volnewmer (Everesse) full face package for maximum collagen remodeling. Sessions spaced 4–6 weeks apart.',
+        description: 'Three-session Volnewmer (Everesse) full face package.',
         durationMinutes: 60,
         priceCents: 195000,
         priceNote: '$1,950 (save $300) · 3 sessions · $650/session',
         displayOrder: 8,
+        isActive: false,
       },
       {
         name: 'Everesse by Volnewmer — Full Face + Neck · Package of 2',
         slug: 'skin-tightening-everesse-full-face-neck-pkg-2',
-        description: 'Two-session Volnewmer (Everesse) full face + neck package. Sessions spaced 4–6 weeks apart.',
+        description: 'Two-session Volnewmer (Everesse) full face + neck package.',
         durationMinutes: 90,
         priceCents: 180000,
         priceNote: '$1,800 (save $100) · 2 sessions · $900/session',
         displayOrder: 9,
+        isActive: false,
       },
     ],
   },
@@ -747,7 +756,7 @@ export async function importServiceCatalog() {
             priceCents: svcData.priceCents,
             priceNote: svcData.priceNote,
             promoGroup: svcData.promoGroup || null,
-            isActive: true,
+            isActive: svcData.isActive !== false,
             deletedAt: null,
           },
         });
@@ -764,7 +773,7 @@ export async function importServiceCatalog() {
             priceCents: svcData.priceCents,
             priceNote: svcData.priceNote,
             promoGroup: svcData.promoGroup || null,
-            isActive: true,
+            isActive: svcData.isActive !== false,
           },
         });
         totalServicesCreated++;
