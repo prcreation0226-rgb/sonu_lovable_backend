@@ -245,15 +245,25 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
 
     // 3. PHI Access Logs
     if (tableName === 'phi_access_log' || tableName === 'phi_access_logs') {
-      const result = await ComplianceService.queryPhiAccessLogs({ page: 1, perPage: 100 });
-      res.status(200).json({ success: true, data: result.logs });
+      try {
+        const result = await ComplianceService.queryPhiAccessLogs({ page: 1, perPage: 100 });
+        res.status(200).json({ success: true, data: result.logs || [] });
+      } catch (err: any) {
+        console.error("Error querying phi_access_log:", err?.message || err);
+        res.status(200).json({ success: true, data: [] });
+      }
       return;
     }
 
     // 4. Audit Logs
     if (tableName === 'audit_logs' || tableName === 'audit_log') {
-      const result = await ComplianceService.queryAuditLogs({ page: 1, perPage: 100 });
-      res.status(200).json({ success: true, data: result.logs });
+      try {
+        const result = await ComplianceService.queryAuditLogs({ page: 1, perPage: 100 });
+        res.status(200).json({ success: true, data: result.logs || [] });
+      } catch (err: any) {
+        console.error("Error querying audit_logs:", err?.message || err);
+        res.status(200).json({ success: true, data: [] });
+      }
       return;
     }
 

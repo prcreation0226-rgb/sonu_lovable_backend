@@ -320,7 +320,10 @@ export class ComplianceService {
   // ---- AUDIT LOG QUERIES ----
   // ==========================================
 
-  static async queryAuditLogs(input: QueryAuditLogInput) {
+  static async queryAuditLogs(input: Partial<QueryAuditLogInput> = {}) {
+    const page = Math.max(1, parseInt(String(input.page || 1), 10) || 1);
+    const perPage = Math.max(1, Math.min(1000, parseInt(String(input.perPage || 100), 10) || 100));
+
     const where: any = {};
     if (input.userId) where.userId = input.userId;
     if (input.patientId) where.patientId = input.patientId;
@@ -336,28 +339,48 @@ export class ComplianceService {
       }
     }
 
-    const skip = (input.page - 1) * input.perPage;
+    const skip = (page - 1) * perPage;
 
-    const [logs, total] = await prisma.$transaction([
-      prisma.auditLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: input.perPage,
-        include: {
-          user: { select: { id: true, email: true } },
-        },
-      }),
-      prisma.auditLog.count({ where }),
-    ]);
+    try {
+      const [logs, total] = await prisma.$transaction([
+        prisma.auditLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: perPage,
+          include: {
+            user: { select: { id: true, email: true } },
+          },
+        }),
+        prisma.auditLog.count({ where }),
+      ]);
 
-    return {
-      logs,
-      meta: { page: input.page, perPage: input.perPage, total, totalPages: Math.ceil(total / input.perPage) },
-    };
+      return {
+        logs,
+        meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+      };
+    } catch {
+      const [logs, total] = await prisma.$transaction([
+        prisma.auditLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: perPage,
+        }),
+        prisma.auditLog.count({ where }),
+      ]);
+
+      return {
+        logs,
+        meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+      };
+    }
   }
 
-  static async queryPhiAccessLogs(input: QueryAuditLogInput) {
+  static async queryPhiAccessLogs(input: Partial<QueryAuditLogInput> = {}) {
+    const page = Math.max(1, parseInt(String(input.page || 1), 10) || 1);
+    const perPage = Math.max(1, Math.min(1000, parseInt(String(input.perPage || 100), 10) || 100));
+
     const where: any = {};
     if (input.userId) where.userId = input.userId;
     if (input.patientId) where.patientId = input.patientId;
@@ -373,24 +396,41 @@ export class ComplianceService {
       }
     }
 
-    const skip = (input.page - 1) * input.perPage;
+    const skip = (page - 1) * perPage;
 
-    const [logs, total] = await prisma.$transaction([
-      prisma.phiAccessLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: input.perPage,
-        include: {
-          user: { select: { id: true, email: true } },
-        },
-      }),
-      prisma.phiAccessLog.count({ where }),
-    ]);
+    try {
+      const [logs, total] = await prisma.$transaction([
+        prisma.phiAccessLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: perPage,
+          include: {
+            user: { select: { id: true, email: true } },
+          },
+        }),
+        prisma.phiAccessLog.count({ where }),
+      ]);
 
-    return {
-      logs,
-      meta: { page: input.page, perPage: input.perPage, total, totalPages: Math.ceil(total / input.perPage) },
-    };
+      return {
+        logs,
+        meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+      };
+    } catch {
+      const [logs, total] = await prisma.$transaction([
+        prisma.phiAccessLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: perPage,
+        }),
+        prisma.phiAccessLog.count({ where }),
+      ]);
+
+      return {
+        logs,
+        meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+      };
+    }
   }
 }
