@@ -65,6 +65,56 @@ export function requireRoles(...allowedRoles: UserRoleName[]) {
 }
 
 /**
+ * Specifically blocks Medical Directors from accessing financial routes.
+ * A Medical Director cannot access financial modules under any circumstance.
+ */
+export function denyFinancialAccessForMD() {
+  return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID));
+    }
+
+    const userRoles = req.user.roles || [];
+    const isMD = userRoles.includes('medical_director');
+
+    if (isMD) {
+      logSecurityEvent(
+        'FORBIDDEN_FINANCIAL_ACCESS',
+        'high',
+        req.clientIp || '0.0.0.0',
+        `User ${req.user.id} (roles: ${userRoles.join(',')}) attempted to access financial route — ${req.method} ${req.originalUrl}`
+      );
+
+      prisma.authAuditLog.create({
+        data: {
+          userId: req.user.id,
+          email: req.user.email,
+          eventType: 'AUTHORIZATION_DENIED',
+          ipAddress: req.clientIp || '0.0.0.0',
+          userAgent: (req.headers['user-agent'] as string) || null,
+          metadata: {
+            method: req.method,
+            url: req.originalUrl,
+            userRoles,
+            reason: 'Medical Director financial block',
+          },
+        },
+      }).catch(() => {});
+
+      return next(
+        new AppError(
+          'Medical Directors are not permitted to access financial or billing modules',
+          403,
+          ErrorCodes.INSUFFICIENT_ROLE
+        )
+      );
+    }
+
+    next();
+  };
+}
+
+/**
  * Require the authenticated user to have a role that holds the specified Permission code.
  * Queries Permission -> RolePermission -> Role -> UserRole architecture.
  */

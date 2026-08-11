@@ -228,7 +228,7 @@ router.get(
  */
 router.post(
   '/prescriptions',
-  requireRoles('medical_director'),
+  requireRoles('nurse_practitioner'),
   auditPhiAccess('prescription', 'create'),
   ClinicalController.createPrescription
 );
@@ -240,9 +240,58 @@ router.post(
  */
 router.post(
   '/prescriptions/:id/approve',
-  requireRoles('medical_director'),
+  requireRoles('nurse_practitioner'),
   auditPhiAccess('prescription', 'update'),
   ClinicalController.approvePrescription
+);
+
+// ---- Medical Director Monthly GFE & Assessment Compliance ----
+
+/**
+ * @route   GET /api/v1/clinical/md-compliance/queue
+ * @desc    Get MD Monthly Signature Queue (GFE & Assessments with Monthly status: pending, signed, overdue)
+ * @access  Medical Director Only (medical_director)
+ */
+router.get(
+  '/md-compliance/queue',
+  requireRoles('medical_director'),
+  auditPhiAccess('soap_note', 'view'),
+  ClinicalController.getMdComplianceQueue
+);
+
+/**
+ * @route   POST /api/v1/clinical/md-compliance/bulk-sign
+ * @desc    Bulk Sign selected eligible pending/overdue GFEs and Assessments
+ * @access  Medical Director Only (medical_director)
+ */
+router.post(
+  '/md-compliance/bulk-sign',
+  requireRoles('medical_director'),
+  auditPhiAccess('soap_note', 'update'),
+  ClinicalController.bulkSignMdDocuments
+);
+
+/**
+ * @route   GET /api/v1/clinical/md-compliance/report
+ * @desc    Get Monthly Compliance & Activity Report (Zero Financial Data)
+ * @access  Medical Director Only (medical_director)
+ */
+router.get(
+  '/md-compliance/report',
+  requireRoles('medical_director'),
+  auditPhiAccess('soap_note', 'view'),
+  ClinicalController.getMdComplianceReport
+);
+
+/**
+ * @route   GET /api/v1/clinical/md-compliance/notifications
+ * @desc    Get Recurring Unsigned Document Alerts for Medical Director
+ * @access  Medical Director Only (medical_director)
+ */
+router.get(
+  '/md-compliance/notifications',
+  requireRoles('medical_director'),
+  ClinicalController.getMdNotifications
 );
 
 export default router;

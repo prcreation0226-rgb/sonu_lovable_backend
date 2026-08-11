@@ -534,4 +534,380 @@ export class ClinicalService {
       },
     });
   }
+
+  /**
+   * Medical Director Compliance & Signature Queue.
+   * Calculates monthly status (pending, signed, overdue) for GFEs and Assessments.
+   */
+  static async getMdComplianceQueue(filters: { month?: string; status?: string; type?: string }) {
+    const currentMonthStr = new Date().toISOString().slice(0, 7); // e.g. "2026-08"
+
+    // 1. Fetch GFEs
+    const gfes = await prisma.gfeForm.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        patient: { select: { id: true, firstName: true, lastName: true, email: true } },
+        provider: { select: { id: true, fullName: true, title: true } },
+      },
+    });
+
+    // 2. Fetch SOAP Notes / Assessments
+    const notes = await prisma.soapNote.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        patient: { select: { id: true, firstName: true, lastName: true, email: true } },
+        author: { select: { id: true, fullName: true, title: true } },
+        cosigner: { select: { id: true, fullName: true, title: true } },
+        appointment: {
+          select: {
+            id: true,
+            appointmentServices: {
+              include: { service: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    const items: Array<{
+      id: string;
+      type: 'gfe' | 'assessment';
+      patientName: string;
+      patientId: string;
+      serviceName: string;
+      providerName: string;
+      createdAt: string;
+      signedAt: string | null;
+      month: string;
+      status: 'pending' | 'signed' | 'overdue';
+      canSign: boolean;
+    }> = [];
+
+    // Process GFEs
+    for (const g of gfes) {
+      const createdIso = g.createdAt.toISOString();
+      const month = createdIso.slice(0, 7);
+      const isSigned = !!g.signedAt || g.status === 'signed';
+
+      let docStatus: 'pending' | 'signed' | 'overdue' = 'pending';
+      if (isSigned) {
+        docStatus = 'signed';
+      } else if (month < currentMonthStr) {
+        docStatus = 'overdue';
+      }
+
+      items.push({
+        id: g.id,
+        type: 'gfe',
+        patientName: `${g.patient.firstName || ''} ${g.patient.lastName || ''}`.trim() || g.patient.email,
+        patientId: g.patientId,
+        serviceName: 'Good Faith Exam (GFE)',
+        providerName: g.provider?.fullName || 'Clinician',
+        createdAt: createdIso,
+        signedAt: g.signedAt ? g.signedAt.toISOString() : null,
+        month,
+        status: docStatus,
+        canSign: !isSigned,
+      });
+    }
+
+    // Process SOAP Notes / Assessments
+    for (const n of notes) {
+      const createdIso = n.createdAt.toISOString();
+      const month = createdIso.slice(0, 7);
+      const isSigned = !!n.cosignedAt || n.status === 'cosigned' || n.status === 'signed';
+
+      let docStatus: 'pending' | 'signed' | 'overdue' = 'pending';
+      if (isSigned) {
+        docStatus = 'signed';
+      } else if (month < currentMonthStr) {
+        docStatus = 'overdue';
+      }
+
+      const serviceNames = n.appointment?.appointmentServices
+        ? n.appointment.appointmentServices.map(as => as.service.name).join(', ')
+        : 'Clinical Assessment';
+
+      items.push({
+        id: n.id,
+        type: 'assessment',
+        patientName: `${n.patient.firstName || ''} ${n.patient.lastName || ''}`.trim() || n.patient.email,
+        patientId: n.patientId,
+        serviceName: serviceNames || 'Clinical Assessment',
+        providerName: n.author?.fullName || 'Clinician',
+        createdAt: createdIso,
+        signedAt: n.cosignedAt ? n.cosignedAt.toISOString() : null,
+        month,
+        status: docStatus,
+        canSign: !isSigned,
+      });
+    }
+
+    // Apply filtering
+    let filtered = items;
+    if (filters.month) {
+      filtered = filtered.filter(i => i.month === filters.month);
+    }
+    if (filters.status) {
+      filtered = filtered.filter(i => i.status === filters.status);
+    }
+    if (filters.type) {
+      filtered = filtered.filter(i => i.type === filters.type);
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Bulk Sign selected GFE & Assessment records.
+   * Validates every record, applies signature, updates DB, creates audit trail for each record.
+   */
+  static async bulkSignMdDocuments(
+    items: Array<{ id: string; type: 'gfe' | 'assessment' }>,
+    mdUserId: string,
+    ipAddress: string,
+    signatureData?: string
+  ) {
+    const mdProfile = await prisma.staffProfile.findFirst({ where: { userId: mdUserId, deletedAt: null } });
+
+    let signedCount = 0;
+    const now = new Date();
+
+    for (const item of items) {
+      if (item.type === 'gfe') {
+        const gfe = await prisma.gfeForm.findFirst({
+          where: { id: item.id, deletedAt: null },
+        });
+
+        // Skip if not found or already signed
+        if (!gfe || gfe.signedAt || gfe.status === 'signed') continue;
+
+        await prisma.gfeForm.update({
+          where: { id: item.id },
+          data: {
+            status: 'signed',
+            signedAt: now,
+          },
+        });
+
+        await writeAuditLog({
+          userId: mdUserId,
+          patientId: gfe.patientId,
+          action: 'GFE_BULK_SIGNED',
+          resourceType: 'gfe_form',
+          resourceId: gfe.id,
+          ipAddress,
+          newValue: { source: 'bulk', signerId: mdUserId, timestamp: now.toISOString() },
+        });
+
+        signedCount++;
+      } else if (item.type === 'assessment') {
+        const note = await prisma.soapNote.findFirst({
+          where: { id: item.id, deletedAt: null },
+        });
+
+        // Skip if not found or already signed/cosigned
+        if (!note || note.cosignedAt || note.status === 'cosigned' || note.status === 'signed') continue;
+
+        await prisma.soapNote.update({
+          where: { id: item.id },
+          data: {
+            status: 'cosigned',
+            cosignedBy: mdProfile?.id || undefined,
+            cosignedAt: now,
+            lockedAt: now,
+          },
+        });
+
+        if (mdProfile) {
+          await prisma.noteSignature.create({
+            data: {
+              noteId: note.id,
+              signerId: mdProfile.id,
+              signatureType: 'cosign',
+              signatureData: signatureData || 'MD Bulk E-Signature Attestation',
+              ipAddress,
+              signedAt: now,
+            },
+          });
+        }
+
+        await writeAuditLog({
+          userId: mdUserId,
+          patientId: note.patientId,
+          action: 'ASSESSMENT_BULK_SIGNED',
+          resourceType: 'soap_note',
+          resourceId: note.id,
+          ipAddress,
+          newValue: { source: 'bulk', signerId: mdUserId, timestamp: now.toISOString() },
+        });
+
+        signedCount++;
+      }
+    }
+
+    return { signedCount };
+  }
+
+  /**
+   * Monthly Compliance & Patient Activity Report (No Financial Info).
+   */
+  static async getMdComplianceReport(month?: string) {
+    const targetMonth = month || new Date().toISOString().slice(0, 7); // YYYY-MM
+    const startDate = new Date(`${targetMonth}-01T00:00:00.000Z`);
+
+    const [y, m] = targetMonth.split('-').map(Number);
+    const endDate = new Date(y, m, 0, 23, 59, 59, 999);
+
+    // 1. Total patients seen in month
+    const appts = await prisma.appointment.findMany({
+      where: {
+        startAt: { gte: startDate, lte: endDate },
+        deletedAt: null,
+      },
+      select: { patientId: true },
+    });
+    const uniquePatientsSeen = new Set(appts.map(a => a.patientId)).size;
+
+    // 2. GFEs created in target month
+    const gfes = await prisma.gfeForm.findMany({
+      where: {
+        createdAt: { gte: startDate, lte: endDate },
+        deletedAt: null,
+      },
+    });
+
+    const totalGfe = gfes.length;
+    const gfeSigned = gfes.filter(g => !!g.signedAt || g.status === 'signed').length;
+    const gfePending = totalGfe - gfeSigned;
+
+    // 3. Assessments created in target month
+    const notes = await prisma.soapNote.findMany({
+      where: {
+        createdAt: { gte: startDate, lte: endDate },
+        deletedAt: null,
+      },
+    });
+
+    const totalAssessments = notes.length;
+    const assessmentsSigned = notes.filter(n => !!n.cosignedAt || n.status === 'cosigned' || n.status === 'signed').length;
+    const assessmentsPending = totalAssessments - assessmentsSigned;
+
+    // 4. Overdue signatures (created BEFORE targetMonth and still unsigned)
+    const overdueGfes = await prisma.gfeForm.count({
+      where: {
+        createdAt: { lt: startDate },
+        signedAt: null,
+        status: { not: 'signed' },
+        deletedAt: null,
+      },
+    });
+
+    const overdueNotes = await prisma.soapNote.count({
+      where: {
+        createdAt: { lt: startDate },
+        cosignedAt: null,
+        status: { notIn: ['cosigned', 'signed'] },
+        deletedAt: null,
+      },
+    });
+
+    return {
+      month: targetMonth,
+      totalPatientsSeen: uniquePatientsSeen,
+      totalGfe,
+      gfeSigned,
+      gfePending,
+      totalAssessments,
+      assessmentsSigned,
+      assessmentsPending,
+      overdueSignatures: overdueGfes + overdueNotes,
+    };
+  }
+
+  /**
+   * Recurring Persistent Notifications for Medical Director.
+   * Deduplicated per MD/month using NotificationQueue model.
+   * Remains active until all pending & overdue signatures are completed, then marks resolved.
+   */
+  static async getMdNotifications(mdUserId: string) {
+    const queue = await this.getMdComplianceQueue({});
+    const unsignedItems = queue.filter(q => q.status === 'pending' || q.status === 'overdue');
+    const currentMonthStr = new Date().toISOString().slice(0, 7); // e.g. "2026-08"
+    const triggerEvent = `MD_MONTHLY_COMPLIANCE_${currentMonthStr}`;
+
+    // If all items are signed (0 unsigned) -> mark any existing NotificationQueue records resolved and return empty
+    if (unsignedItems.length === 0) {
+      await prisma.notificationQueue.updateMany({
+        where: {
+          recipient: mdUserId,
+          triggerEvent,
+          status: { in: ['queued', 'active', 'pending'] },
+        },
+        data: { status: 'resolved' },
+      }).catch(() => {});
+
+      return { notifications: [] };
+    }
+
+    const pendingCount = unsignedItems.filter(i => i.status === 'pending').length;
+    const overdueCount = unsignedItems.filter(i => i.status === 'overdue').length;
+    const totalUnsigned = unsignedItems.length;
+
+    const notifTitle = 'Monthly Clinical Compliance Action Required';
+    const notifMessage = `You have ${totalUnsigned} document(s) requiring Medical Director signature (${pendingCount} Pending, ${overdueCount} Overdue).`;
+    const actionLink = '/staff/clinical-reviews?tab=queue';
+
+    const notifPayload = {
+      id: `md-notif-${currentMonthStr}-${mdUserId}`,
+      title: notifTitle,
+      message: notifMessage,
+      link: actionLink,
+      type: overdueCount > 0 ? 'CRITICAL' : 'WARNING',
+      pendingCount,
+      overdueCount,
+      totalUnsigned,
+      month: currentMonthStr,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Deduplicated persistence in database NotificationQueue
+    try {
+      const existing = await prisma.notificationQueue.findFirst({
+        where: {
+          recipient: mdUserId,
+          triggerEvent,
+        },
+      });
+
+      if (existing) {
+        await prisma.notificationQueue.update({
+          where: { id: existing.id },
+          data: {
+            subject: notifTitle,
+            body: JSON.stringify(notifPayload),
+            status: 'queued',
+          },
+        });
+      } else {
+        await prisma.notificationQueue.create({
+          data: {
+            channel: 'in_app',
+            recipient: mdUserId,
+            subject: notifTitle,
+            body: JSON.stringify(notifPayload),
+            triggerEvent,
+            containsPhi: false,
+            status: 'queued',
+          },
+        });
+      }
+    } catch {
+      // Non-fatal fallback
+    }
+
+    return { notifications: [notifPayload] };
+  }
 }

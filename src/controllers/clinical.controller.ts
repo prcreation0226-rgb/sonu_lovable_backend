@@ -146,4 +146,44 @@ export class ClinicalController {
       res.status(200).json({ success: true, data: { id: req.params.id, status: 'APPROVED' }, message: 'Prescription approved by Medical Director' });
     } catch (error) { next(error); }
   }
+
+  static async getMdComplianceQueue(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const month = req.query.month as string | undefined;
+      const status = req.query.status as string | undefined;
+      const type = req.query.type as string | undefined;
+      const queue = await ClinicalService.getMdComplianceQueue({ month, status, type });
+      res.status(200).json({ success: true, data: queue });
+    } catch (error) { next(error); }
+  }
+
+  static async bulkSignMdDocuments(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const { items, signatureData } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ success: false, message: 'No documents provided for bulk signing' });
+        return;
+      }
+      const result = await ClinicalService.bulkSignMdDocuments(items, userId, ip, signatureData);
+      res.status(200).json({ success: true, data: result, message: `Successfully bulk signed ${result.signedCount} document(s)` });
+    } catch (error) { next(error); }
+  }
+
+  static async getMdComplianceReport(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const month = req.query.month as string | undefined;
+      const report = await ClinicalService.getMdComplianceReport(month);
+      res.status(200).json({ success: true, data: report });
+    } catch (error) { next(error); }
+  }
+
+  static async getMdNotifications(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const data = await ClinicalService.getMdNotifications(userId);
+      res.status(200).json({ success: true, data: data.notifications });
+    } catch (error) { next(error); }
+  }
 }

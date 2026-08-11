@@ -941,7 +941,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
     if (tableName === 'services' || tableName === 'service') {
       try {
         const dbServices = await prisma.service.findMany({
-          where: { isActive: true },
+          where: { isActive: true, NOT: { name: { contains: 'Everesse' } } },
           orderBy: { name: 'asc' },
         });
         if (dbServices.length > 0) {
@@ -949,7 +949,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
           return;
         }
       } catch {}
-      res.status(200).json({ success: true, data: LIVE_SERVICES });
+      res.status(200).json({ success: true, data: LIVE_SERVICES.filter(s => s.is_active !== false && !/everesse/i.test(s.name)) });
       return;
     }
 

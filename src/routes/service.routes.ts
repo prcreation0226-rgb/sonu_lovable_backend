@@ -31,7 +31,7 @@ router.get('/public', async (_req: Request, res: Response, next: NextFunction) =
         description: true,
         displayOrder: true,
         services: {
-          where: { deletedAt: null, isActive: true },
+          where: { deletedAt: null, isActive: true, NOT: { name: { contains: 'Everesse' } } },
           select: {
             id: true,
             categoryId: true,
@@ -67,7 +67,7 @@ router.get(
         orderBy: { displayOrder: 'asc' },
         include: {
           services: {
-            where: { deletedAt: null, isActive: true },
+            where: { deletedAt: null, isActive: true, NOT: { name: { contains: 'Everesse' } } },
             orderBy: { name: 'asc' },
           },
         },
@@ -87,7 +87,7 @@ router.get(
   async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const services = await prisma.service.findMany({
-        where: { deletedAt: null, isActive: true },
+        where: { deletedAt: null, isActive: true, NOT: { name: { contains: 'Everesse' } } },
         include: { category: true },
         orderBy: [{ categoryId: 'asc' }, { name: 'asc' }],
       });

@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import { BillingController } from '../controllers/billing.controller';
 import { authenticate } from '../middleware/auth';
-import { requireRoles } from '../middleware/rbac';
+import { requireRoles, denyFinancialAccessForMD } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
 import { auditPhiAccess } from '../middleware/audit';
 import {
@@ -30,6 +30,7 @@ router.use(authenticate);
 router.post(
   '/checkout',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   validate({ body: CheckoutTransactionSchema }),
   auditPhiAccess('patient_profile', 'create'),
   BillingController.checkoutTransaction
@@ -38,18 +39,21 @@ router.post(
 router.post(
   '/pos-create-or-get-sale',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   BillingController.checkoutTransaction
 );
 
 router.post(
   '/pos-finalize-sale',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   BillingController.checkoutTransaction
 );
 
 router.post(
   '/pos-update-sale',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   BillingController.checkoutTransaction
 );
 
@@ -58,6 +62,7 @@ router.post(
 router.post(
   '/invoices',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   validate({ body: CreateInvoiceSchema }),
   auditPhiAccess('patient_profile', 'create'),
   BillingController.createInvoice
@@ -66,12 +71,14 @@ router.post(
 router.get(
   '/invoices',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   BillingController.getInvoices
 );
 
 router.get(
   '/invoices/:id',
   requireRoles(...BILLING_ALLOWED_ROLES, 'patient'),
+  denyFinancialAccessForMD(),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getInvoiceById
 );
@@ -79,6 +86,7 @@ router.get(
 router.get(
   '/invoices/patient/:patientId',
   requireRoles(...BILLING_ALLOWED_ROLES, 'patient'),
+  denyFinancialAccessForMD(),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getPatientInvoices
 );
@@ -86,6 +94,7 @@ router.get(
 router.post(
   '/invoices/:id/cancel',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   auditPhiAccess('patient_profile', 'update'),
   BillingController.cancelInvoice
 );
@@ -95,6 +104,7 @@ router.post(
 router.post(
   '/payments',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   validate({ body: RecordPaymentSchema }),
   auditPhiAccess('patient_profile', 'create'),
   BillingController.recordPayment
@@ -105,6 +115,7 @@ router.post(
 router.post(
   '/refunds',
   requireRoles('admin'),
+  denyFinancialAccessForMD(),
   validate({ body: CreateRefundSchema }),
   BillingController.createRefund
 );
@@ -121,6 +132,7 @@ router.post(
 router.get(
   '/credits/patient/:patientId',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   auditPhiAccess('patient_profile', 'view'),
   BillingController.getPatientCredits
 );
@@ -130,6 +142,7 @@ router.get(
 router.post(
   '/no-show-charges',
   requireRoles(...BILLING_ALLOWED_ROLES),
+  denyFinancialAccessForMD(),
   validate({ body: CreateNoShowChargeSchema }),
   BillingController.createNoShowCharge
 );
