@@ -36,11 +36,11 @@ router.post(
 /**
  * @route   GET /api/v1/users
  * @desc    List user accounts with pagination & search
- * @access  Admin, Privacy Officer
+ * @access  Admin, Privacy Officer, Front Desk, Nurse Practitioner, Medical Director, RN Injector
  */
 router.get(
   '/',
-  requireRoles('admin', 'privacy_officer'),
+  requireRoles('admin', 'privacy_officer', 'front_desk', 'nurse_practitioner', 'medical_director', 'rn_injector'),
   UserController.getUsers
 );
 
