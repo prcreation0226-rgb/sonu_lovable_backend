@@ -89,7 +89,7 @@ export function requirePermission(permissionCode: string) {
 
       const allowedRoleNames = dbPermission && dbPermission.rolePermissions.length > 0
         ? dbPermission.rolePermissions.map((rp) => rp.role.name)
-        : ['admin', 'patient_account_manager'];
+        : ['admin', 'front_desk', 'patient_account_manager'];
 
       const hasPermission = allowedRoleNames.some((r) => userRoles.includes(r as any));
 
