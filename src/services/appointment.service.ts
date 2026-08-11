@@ -586,9 +586,11 @@ export class AppointmentService {
             existingAccount = false;
 
             // Resolve patient role from DB (RBAC check)
-            const patientRole = await tx.role.findFirst({ where: { name: 'patient' } });
+            let patientRole = await tx.role.findFirst({ where: { name: 'patient' } });
             if (!patientRole) {
-              throw new AppError('Patient role is not configured in the system', 500);
+              patientRole = await tx.role.create({
+                data: { name: 'patient', description: 'Patient / Client Role' },
+              });
             }
 
             // Create User with mustChangePassword = true
