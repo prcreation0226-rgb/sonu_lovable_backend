@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import { ComplianceController } from '../controllers/compliance.controller';
+import { HipaaDeviceController } from '../controllers/hipaaDevice.controller';
 import { authenticate } from '../middleware/auth';
 import { requireRoles, STAFF_ROLES, COMPLIANCE_ROLES } from '../middleware/rbac';
 import { validate } from '../middleware/validate';
@@ -111,6 +112,38 @@ router.get(
   requireRoles(...COMPLIANCE_ROLES),
   validate({ query: QueryAuditLogSchema }),
   ComplianceController.queryPhiAccessLogs
+);
+
+// ---- HIPAA IT Device & Media Register (§164.310(d)) ----
+
+router.get(
+  '/hipaa-devices',
+  requireRoles(...COMPLIANCE_ROLES),
+  HipaaDeviceController.listDevices
+);
+
+router.get(
+  '/hipaa-devices/:id',
+  requireRoles(...COMPLIANCE_ROLES),
+  HipaaDeviceController.getDeviceById
+);
+
+router.post(
+  '/hipaa-devices',
+  requireRoles('admin', 'privacy_officer'),
+  HipaaDeviceController.createDevice
+);
+
+router.patch(
+  '/hipaa-devices/:id',
+  requireRoles('admin', 'privacy_officer'),
+  HipaaDeviceController.updateDevice
+);
+
+router.post(
+  '/hipaa-devices/:id/decommission',
+  requireRoles('admin', 'privacy_officer'),
+  HipaaDeviceController.decommissionOrDisposeDevice
 );
 
 export default router;

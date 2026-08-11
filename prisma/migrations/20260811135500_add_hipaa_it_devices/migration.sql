@@ -1,0 +1,30 @@
+-- Additive migration for HIPAA IT Device & Media Register
+CREATE TABLE IF NOT EXISTS `hipaa_it_devices` (
+    `id` CHAR(36) NOT NULL,
+    `device_name` VARCHAR(255) NOT NULL,
+    `device_type` VARCHAR(50) NOT NULL,
+    `serial_number` VARCHAR(100) NOT NULL,
+    `assigned_user_id` CHAR(36) NULL,
+    `assigned_user_name` VARCHAR(255) NULL,
+    `manufacturer` VARCHAR(100) NULL,
+    `model` VARCHAR(100) NULL,
+    `operating_system` VARCHAR(100) NULL,
+    `is_encrypted` BOOLEAN NOT NULL DEFAULT true,
+    `screen_lock_enabled` BOOLEAN NOT NULL DEFAULT true,
+    `status` VARCHAR(50) NOT NULL DEFAULT 'active',
+    `date_assigned` DATE NULL,
+    `last_security_review_at` DATETIME(3) NULL,
+    `decommission_date` DATE NULL,
+    `disposal_date` DATE NULL,
+    `disposal_method` VARCHAR(255) NULL,
+    `disposal_notes` TEXT NULL,
+    `created_by_user_id` CHAR(36) NULL,
+    `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`id`),
+    INDEX `hipaa_it_devices_status_idx`(`status`),
+    INDEX `hipaa_it_devices_device_type_idx`(`device_type`),
+    INDEX `hipaa_it_devices_assigned_user_id_idx`(`assigned_user_id`),
+    CONSTRAINT `hipaa_it_devices_assigned_user_id_fkey` FOREIGN KEY (`assigned_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
