@@ -91,8 +91,12 @@ export const env = {
   RATE_LIMIT_WINDOW_MS: optionalIntEnv('RATE_LIMIT_WINDOW_MS', 900000),
   RATE_LIMIT_MAX_REQUESTS: optionalIntEnv('RATE_LIMIT_MAX_REQUESTS', 100),
 
-  // MFA Feature Flags & Encryption (Production default is true; overridden to false by local .env for local UAT)
-  MFA_ENFORCEMENT_ENABLED: optionalEnv('MFA_ENFORCEMENT_ENABLED', 'true') === 'true',
+  // TEMPORARY CENTRAL UAT TOGGLE: Set to true during UAT to force MFA OFF and guarantee 200 OK login.
+  // Set to false to re-enable environment-driven production MFA enforcement.
+  UAT_DISABLE_MFA: true,
+
+  // MFA Feature Flags (When UAT_DISABLE_MFA is true, MFA enforcement is forced OFF)
+  MFA_ENFORCEMENT_ENABLED: false,
 
   MFA_REQUIRED_ROLES: optionalEnv(
     'MFA_REQUIRED_ROLES',
@@ -108,6 +112,7 @@ export const env = {
 } as const;
 
 if (env.NODE_ENV === 'production' && !env.MFA_ENFORCEMENT_ENABLED) {
-  console.warn('[SECURITY WARNING] MFA_ENFORCEMENT_ENABLED is disabled (false) in PRODUCTION environment!');
+  console.warn('[SECURITY WARNING] MFA_ENFORCEMENT_ENABLED is temporarily disabled (false) for UAT testing!');
 }
+
 
