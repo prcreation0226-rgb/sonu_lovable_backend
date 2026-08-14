@@ -7,13 +7,14 @@ import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
-import { getQueue, QUEUE_NAMES } from './queue.service';
+import { EmailService } from './email.service';
+import { PasswordPolicyService } from './passwordPolicy.service';
 
 export class PasswordResetService {
   /**
    * Initiate password reset by email.
    * Generates a 32-byte cryptographically secure token, stores its SHA-256 hash in DB,
-   * enqueues email notification, and ALWAYS returns a generic response to prevent account enumeration.
+   * dispatches email via centralized EmailService, and ALWAYS returns a generic response to prevent account enumeration.
    */
   static async requestPasswordReset(
     email: string,
@@ -58,17 +59,16 @@ export class PasswordResetService {
         },
       });
 
-      // 4. Enqueue password reset email task
+      // 4. Dispatch password reset email via centralized EmailService
       try {
-        const queue = getQueue(QUEUE_NAMES.EMAIL_SEND);
-        await queue.add('send-password-reset', {
+        const resetUrl = `${env.CORS_ORIGIN}/staff/reset-password?token=${rawToken}`;
+        await EmailService.sendPasswordResetEmail({
           to: cleanEmail,
-          subject: 'Radiantilyk EMR — Password Reset Instructions',
-          body: `You requested a password reset. Click the following link to reset your password: ${env.CORS_ORIGIN}/staff/reset-password?token=${rawToken}`,
-          token: rawToken,
+          resetUrl,
+          userId: user.id,
         });
       } catch (err) {
-        logger.warn(`[PASSWORD_RESET] Failed to enqueue reset email for ${cleanEmail}`);
+        logger.warn(`[PASSWORD_RESET] Failed to dispatch reset email for ${cleanEmail}`);
       }
     }
 
@@ -79,7 +79,7 @@ export class PasswordResetService {
 
   /**
    * Reset user password using opaque raw token.
-   * Hashes token, verifies validity & expiry, enforces 5-password history rule,
+   * Hashes token, verifies validity & expiry, enforces password policy & 5-password history rule,
    * transactionally updates password & revokes sessions, and logs security audit event.
    */
   static async resetPassword(
@@ -92,9 +92,9 @@ export class PasswordResetService {
       throw new AppError('Invalid or expired password reset link.', 400);
     }
 
-    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
-      throw new AppError('Password must be at least 8 characters.', 400);
-    }
+    // Enforce strong password complexity & HIBP pwned check
+    await PasswordPolicyService.validatePassword(newPassword);
+
 
     // Compute SHA-256 hash of raw token
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');

@@ -95,10 +95,37 @@ export const CommPrefSchema = z.object({
   allowMarketing: z.boolean().default(false),
 });
 
+export const PublicMarketingConsentSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Valid email required').max(255),
+  firstName: z.string().trim().max(100).optional(),
+  lastName: z.string().trim().max(100).optional(),
+  marketingConsent: z.boolean().default(true),
+});
+
+export const UnsubscribeTokenSchema = z.object({
+  token: z.string().min(1, 'Token required'),
+});
+
 // ---- CMIA PHI Deletion Request Schema ----
 
 export const CmiaDeletionRequestSchema = z.object({
   reason: z.string().min(5, 'Reason is required for CMIA PHI deletion request').max(2000),
+});
+
+// ---- Export Medical Record Query Schema ----
+
+export const ExportMedicalRecordQuerySchema = z.object({
+  sections: z.string().optional(),
+});
+
+// ---- Patient Amendment Request Schema ----
+
+export const CreateAmendmentRequestSchema = z.object({
+  recordCategory: z.string().trim().min(2, 'Record category required').max(100),
+  currentText: z.string().trim().max(5000).optional(),
+  requestedCorrection: z.string().trim().min(5, 'Requested correction required').max(5000),
+  rationale: z.string().trim().min(5, 'Rationale required').max(5000),
+  noteId: z.string().uuid().optional(),
 });
 
 // Inferred Types
@@ -111,4 +138,11 @@ export type MedicationInput = z.infer<typeof MedicationSchema>;
 export type DocumentUploadRequestInput = z.infer<typeof DocumentUploadRequestSchema>;
 export type PhotoUploadRequestInput = z.infer<typeof PhotoUploadRequestSchema>;
 export type CommPrefInput = z.infer<typeof CommPrefSchema>;
+export type PublicMarketingConsentInput = z.infer<typeof PublicMarketingConsentSchema>;
+export type UnsubscribeTokenInput = z.infer<typeof UnsubscribeTokenSchema>;
 export type CmiaDeletionRequestInput = z.infer<typeof CmiaDeletionRequestSchema>;
+export type ExportMedicalRecordQueryInput = z.infer<typeof ExportMedicalRecordQuerySchema>;
+export type CreateAmendmentRequestInput = z.infer<typeof CreateAmendmentRequestSchema>;
+
+
+

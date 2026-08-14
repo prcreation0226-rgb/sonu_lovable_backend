@@ -25,6 +25,14 @@ export interface RefreshTokenPayload {
   exp?: number;
 }
 
+export interface MarketingUnsubscribePayload {
+  sub: string;       // Patient ID or Email
+  email: string;
+  purpose: 'marketing_unsubscribe';
+  iat?: number;
+  exp?: number;
+}
+
 /**
  * Sign an Access Token (short-lived, 15m default).
  */
@@ -44,6 +52,17 @@ export function signRefreshToken(payload: Omit<RefreshTokenPayload, 'iat' | 'exp
 }
 
 /**
+ * Sign a Marketing Unsubscribe Token (long-lived, 90d default).
+ */
+export function signMarketingUnsubscribeToken(patientId: string, email: string): string {
+  return jwt.sign(
+    { sub: patientId || email, email, purpose: 'marketing_unsubscribe' },
+    env.JWT_ACCESS_SECRET,
+    { expiresIn: '90d' }
+  );
+}
+
+/**
  * Verify an Access Token.
  */
 export function verifyAccessToken(token: string): AccessTokenPayload {
@@ -56,3 +75,15 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 export function verifyRefreshToken(token: string): RefreshTokenPayload {
   return jwt.verify(token, env.JWT_REFRESH_SECRET) as RefreshTokenPayload;
 }
+
+/**
+ * Verify a Marketing Unsubscribe Token.
+ */
+export function verifyMarketingUnsubscribeToken(token: string): MarketingUnsubscribePayload {
+  const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as MarketingUnsubscribePayload;
+  if (decoded.purpose !== 'marketing_unsubscribe') {
+    throw new Error('Invalid token purpose');
+  }
+  return decoded;
+}
+

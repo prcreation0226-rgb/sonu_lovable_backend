@@ -92,6 +92,15 @@ export const CreatePrescriptionSchema = z.object({
   instructions: z.string().max(1000).optional().nullable(),
 });
 
+// ---- Patient Amendment Request Review Schema ----
+
+export const ReviewAmendmentRequestSchema = z.object({
+  status: z.enum(['under_review', 'approved', 'denied']),
+  staffResponse: z.string().trim().max(5000).optional(),
+  denialReason: z.string().trim().max(5000).optional(),
+  addendumText: z.string().trim().max(5000).optional(),
+});
+
 // Inferred Types
 export type CreateEncounterInput = z.infer<typeof CreateEncounterSchema>;
 export type UpdateEncounterInput = z.infer<typeof UpdateEncounterSchema>;
@@ -102,3 +111,5 @@ export type AddendumInput = z.infer<typeof AddendumSchema>;
 export type CreateVitalsInput = z.infer<typeof CreateVitalsSchema>;
 export type CreateProcedureInput = z.infer<typeof CreateProcedureSchema>;
 export type CreatePrescriptionInput = z.infer<typeof CreatePrescriptionSchema>;
+export type ReviewAmendmentRequestInput = z.infer<typeof ReviewAmendmentRequestSchema>;
+

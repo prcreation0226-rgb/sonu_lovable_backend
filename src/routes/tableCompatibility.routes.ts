@@ -353,62 +353,20 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
         const mapped = dbVendors.map((v: any) => {
           let name = v.name;
           let category = v.category || null;
-          let touches_phi = true;
-          let baa_status = "pending";
-          let baa_renewal_at = null;
+          let touches_phi = v.touchesPhi ?? true;
+          let baa_required = v.baaRequired ?? true;
+          let baa_status = v.baaStatus || (v.hasBaa ? "signed" : "pending");
+          let baa_renewal_at = v.baaRenewalAt ? v.baaRenewalAt.toISOString().slice(0, 10) : null;
           let notesText = v.notes || null;
           let is_active = v.isActive !== false;
 
           // Replace outdated Lovable Cloud record with Railway Cloud Infrastructure
           if (name.toLowerCase().includes("lovable cloud") || name.toLowerCase().includes("lovable")) {
             name = "Railway Cloud Infrastructure";
-            category = "Hosting & Infrastructure";
+            category = category || "Hosting & Infrastructure";
             touches_phi = true;
-            baa_status = "pending";
-            baa_renewal_at = null;
-            notesText = "Live cloud application & backend hosting";
           }
 
-          if (v.notes && v.notes.startsWith("JSON:")) {
-            try {
-              const parsed = JSON.parse(v.notes.slice(5));
-              category = parsed.category || category;
-              touches_phi = parsed.touches_phi ?? touches_phi;
-              baa_status = parsed.baa_status || baa_status;
-              baa_renewal_at = parsed.baa_renewal_at || null;
-              notesText = parsed.notes || null;
-            } catch {}
-          } else {
-            // Clean up legacy seed records with fake signed statuses or fake dates
-            if (name.toLowerCase().includes("stripe")) {
-              category = "Payment Gateway";
-              touches_phi = false;
-              baa_status = "not_required";
-              baa_renewal_at = null;
-              notesText = "Processes PCI-DSS card tokens for client billing. No PHI stored.";
-            } else if (name.toLowerCase().includes("twilio")) {
-              name = "Twilio SMS";
-              category = "Telehealth & SMS";
-              touches_phi = true;
-              baa_status = "pending";
-              baa_renewal_at = null;
-              notesText = "Automated appointment reminders and SMS intake notifications";
-            } else if (name.toLowerCase().includes("resend")) {
-              name = "Resend Email Service";
-              category = "Email Services";
-              touches_phi = true;
-              baa_status = "pending";
-              baa_renewal_at = null;
-              notesText = "Transactional notification emails and verification codes";
-            } else if (name.toLowerCase().includes("google")) {
-              name = "Google Workspace / Meet";
-              category = "Email & Telehealth Video";
-              touches_phi = true;
-              baa_status = "pending";
-              baa_renewal_at = null;
-              notesText = "HIPAA BAA accepted for Google Workspace Enterprise";
-            }
-          }
 
           // Strict enforcement: Remove fake renewal dates if not verified
           if (baa_renewal_at && (baa_renewal_at.includes("2027-") || baa_renewal_at.includes("2025-"))) {
@@ -1016,46 +974,51 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
 function mapVendorPayload(body: any) {
   const {
     name,
+    category,
+    touches_phi,
+    touchesPhi,
+    baa_required,
+    baaRequired,
+    baa_status,
+    baaStatus,
+    baa_signed_at,
+    baaSignedAt,
+    baa_renewal_at,
+    baaRenewalAt,
     contact_name,
+    contactName,
     contact_email,
+    email,
     phone,
     address,
     website,
-    baa_signed_at,
     notes,
-    // Fields not in Prisma schema — absorbed into notes or ignored safely
-    category,
-    touches_phi,
-    baa_required,
-    baa_status,
-    baa_renewal_at,
-    ...rest
+    is_active,
+    isActive,
   } = body || {};
 
-  // Build a notes string that preserves the extra metadata
-  const extraMeta = [
-    category ? `Category: ${category}` : null,
-    touches_phi !== undefined ? `Touches PHI: ${touches_phi}` : null,
-    baa_required !== undefined ? `BAA Required: ${baa_required}` : null,
-    baa_status ? `BAA Status: ${baa_status}` : null,
-    baa_renewal_at ? `BAA Renewal: ${baa_renewal_at}` : null,
-  ].filter(Boolean).join(' | ');
-
-  const combinedNotes = [notes, extraMeta].filter(Boolean).join(' — ') || null;
+  const finalBaaStatus = baa_status || baaStatus || 'pending';
+  const hasBaa = finalBaaStatus === 'signed';
 
   return {
     name: name?.trim() || 'Unnamed Vendor',
-    contactName: contact_name || null,
-    email: contact_email || null,
+    category: category || null,
+    touchesPhi: touches_phi !== undefined ? Boolean(touches_phi) : (touchesPhi !== undefined ? Boolean(touchesPhi) : false),
+    baaRequired: baa_required !== undefined ? Boolean(baa_required) : (baaRequired !== undefined ? Boolean(baaRequired) : true),
+    baaStatus: finalBaaStatus,
+    hasBaa,
+    baaSignedAt: baa_signed_at || baaSignedAt ? new Date(baa_signed_at || baaSignedAt) : (hasBaa ? new Date() : null),
+    baaRenewalAt: baa_renewal_at || baaRenewalAt ? new Date(baa_renewal_at || baaRenewalAt) : null,
+    contactName: contact_name || contactName || null,
+    email: contact_email || email || null,
     phone: phone || null,
     address: address || null,
     website: website || null,
-    hasBaa: baa_required === true || baa_status === 'signed',
-    baaSignedAt: baa_signed_at ? new Date(baa_signed_at) : null,
-    notes: combinedNotes,
-    isActive: true,
+    notes: notes || null,
+    isActive: is_active !== undefined ? Boolean(is_active) : (isActive !== undefined ? Boolean(isActive) : true),
   };
 }
+
 
 /**
  * Handle POST / INSERT requests for legacy table endpoints

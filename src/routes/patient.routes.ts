@@ -23,13 +23,63 @@ import {
   DocumentUploadRequestSchema,
   PhotoUploadRequestSchema,
   CommPrefSchema,
+  PublicMarketingConsentSchema,
+  UnsubscribeTokenSchema,
   CmiaDeletionRequestSchema,
+  ExportMedicalRecordQuerySchema,
+  CreateAmendmentRequestSchema,
 } from '../schemas/patient.schema';
 
 const router = Router();
 
-// All patient endpoints require authentication
+/**
+ * @route   POST /api/v1/patient/amendment-requests (or /api/v1/patients/amendment-requests)
+ * @desc    Submit record amendment request (HIPAA §164.526)
+ * @access  Patient ONLY
+ */
+router.post(
+  '/amendment-requests',
+  requireRoles('patient'),
+  validate({ body: CreateAmendmentRequestSchema }),
+  auditPhiAccess('patient_profile', 'view'),
+  PatientController.createAmendmentRequest
+);
+
+/**
+ * @route   GET /api/v1/patient/amendment-requests (or /api/v1/patients/amendment-requests)
+ * @desc    Get amendment requests for authenticated patient
+ * @access  Patient ONLY
+ */
+router.get(
+  '/amendment-requests',
+  requireRoles('patient'),
+  auditPhiAccess('patient_profile', 'view'),
+  PatientController.getMyAmendmentRequests
+);
+
+// ---- Public Marketing & Unsubscribe Endpoints (Unauthenticated) ----
+
+
+router.post(
+  '/public/marketing-consent',
+  validate({ body: PublicMarketingConsentSchema }),
+  PatientController.recordPublicMarketingConsent
+);
+
+router.get(
+  '/public/unsubscribe-verify',
+  PatientController.verifyUnsubscribeToken
+);
+
+router.post(
+  '/public/unsubscribe',
+  validate({ body: UnsubscribeTokenSchema }),
+  PatientController.executePublicUnsubscribe
+);
+
+// All subsequent patient endpoints require authentication
 router.use(authenticate);
+
 
 // ---- Patient Self-Service Portal Endpoints ----
 
@@ -68,6 +118,43 @@ router.get(
   auditPhiAccess('consent_signature', 'view'),
   PatientController.getMyConsents
 );
+
+/**
+ * @route   GET /api/v1/patient/npp-status
+ * @desc    Get NPP acknowledgment status for authenticated patient
+ * @access  Patient ONLY
+ */
+router.get(
+  '/npp-status',
+  requireRoles('patient'),
+  PatientController.getNppStatus
+);
+
+/**
+ * @route   POST /api/v1/patient/npp-acknowledge
+ * @desc    Acknowledge Notice of Privacy Practices for authenticated patient
+ * @access  Patient ONLY
+ */
+router.post(
+  '/npp-acknowledge',
+  requireRoles('patient'),
+  PatientController.acknowledgeNpp
+);
+
+
+/**
+ * @route   GET /api/v1/patient/export-medical-record (or /api/v1/patients/export-medical-record)
+ * @desc    Export complete medical record for authenticated patient (HIPAA §164.524 Right of Access)
+ * @access  Patient ONLY
+ */
+router.get(
+  '/export-medical-record',
+  requireRoles('patient'),
+  validate({ query: ExportMedicalRecordQuerySchema }),
+  auditPhiAccess('patient_profile', 'export'),
+  PatientController.exportMedicalRecord
+);
+
 
 // ---- Patient Profile Endpoints ----
 

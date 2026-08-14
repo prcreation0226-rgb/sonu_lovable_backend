@@ -13,6 +13,9 @@ import {
   CreateBreachReportSchema,
   UpdateBreachReportSchema,
   CreatePolicyVersionSchema,
+  CreateHipaaPolicySchema,
+  UpdatePolicyStatusSchema,
+  AcknowledgePolicySchema,
   CreateStaffTrainingSchema,
   CreateExternalDisclosureSchema,
   QueryAuditLogSchema,
@@ -55,7 +58,7 @@ router.patch(
 
 router.post(
   '/policies',
-  requireRoles('admin'),
+  requireRoles(...COMPLIANCE_ROLES),
   validate({ body: CreatePolicyVersionSchema }),
   ComplianceController.createPolicyVersion
 );
@@ -66,20 +69,85 @@ router.get(
   ComplianceController.getPolicies
 );
 
+router.post(
+  '/policies/create',
+  requireRoles(...COMPLIANCE_ROLES),
+  validate({ body: CreateHipaaPolicySchema }),
+  ComplianceController.createHipaaPolicy
+);
+
+router.patch(
+  '/policies/:id/status',
+  requireRoles(...COMPLIANCE_ROLES),
+  validate({ body: UpdatePolicyStatusSchema }),
+  ComplianceController.updatePolicyStatus
+);
+
+router.get(
+  '/policies/:id/versions',
+  requireRoles(...STAFF_ROLES),
+  ComplianceController.getPolicyVersions
+);
+
+router.get(
+  '/policies/:id/approvals',
+  requireRoles(...STAFF_ROLES),
+  ComplianceController.getPolicyApprovals
+);
+
+router.post(
+  '/policies/:id/acknowledge',
+  requireRoles(...STAFF_ROLES),
+  validate({ body: AcknowledgePolicySchema }),
+  ComplianceController.acknowledgePolicy
+);
+
+router.get(
+  '/policies/:id/acknowledgements',
+  requireRoles(...COMPLIANCE_ROLES),
+  ComplianceController.getPolicyAcknowledgements
+);
+
 // ---- Training Records ----
 
 router.post(
   '/training-records',
-  requireRoles('admin', 'privacy_officer'),
+  requireRoles(...COMPLIANCE_ROLES),
   validate({ body: CreateStaffTrainingSchema }),
   ComplianceController.createTrainingRecord
 );
 
 router.get(
-  '/training-records/staff/:staffId',
+  '/training-records',
   requireRoles(...COMPLIANCE_ROLES),
+  ComplianceController.getAllTrainingRecords
+);
+
+router.get(
+  '/training-records/staff/:staffId',
+  requireRoles(...COMPLIANCE_ROLES, ...STAFF_ROLES),
   ComplianceController.getStaffTrainingRecords
 );
+
+router.post(
+  '/training-records/:id/complete',
+  requireRoles(...STAFF_ROLES),
+  ComplianceController.completeTrainingRecord
+);
+
+router.post(
+  '/annual-hipaa/acknowledge',
+  requireRoles(...STAFF_ROLES),
+  ComplianceController.acknowledgeAnnualHipaa
+);
+
+router.get(
+  '/annual-hipaa/dashboard',
+  requireRoles(...COMPLIANCE_ROLES),
+  ComplianceController.getAnnualHipaaDashboard
+);
+
+
 
 // ---- External Disclosures ----
 
@@ -146,4 +214,153 @@ router.post(
   HipaaDeviceController.decommissionOrDisposeDevice
 );
 
+// ---- Marketing Recipient Consent Gate ----
+
+import { SecurityIncidentController } from '../controllers/securityIncident.controller';
+import {
+  CreateIncidentSchema,
+  UpdateIncidentSchema,
+  AssessBreachSchema,
+} from '../schemas/securityIncident.schema';
+
+router.get(
+  '/marketing-recipients',
+  requireRoles(...COMPLIANCE_ROLES),
+  ComplianceController.getMarketingRecipients
+);
+
+// ---- Security Incidents & CMIA Assessment ----
+
+router.post(
+  '/incidents',
+  requireRoles(...STAFF_ROLES),
+  validate({ body: CreateIncidentSchema }),
+  SecurityIncidentController.createIncident
+);
+
+router.get(
+  '/incidents',
+  requireRoles(...COMPLIANCE_ROLES),
+  SecurityIncidentController.getIncidents
+);
+
+router.get(
+  '/incidents/:id',
+  requireRoles(...COMPLIANCE_ROLES),
+  SecurityIncidentController.getIncidentById
+);
+
+router.patch(
+  '/incidents/:id',
+  requireRoles(...COMPLIANCE_ROLES),
+  validate({ body: UpdateIncidentSchema }),
+  SecurityIncidentController.updateIncident
+);
+
+router.post(
+  '/incidents/:id/assess-breach',
+  requireRoles(...COMPLIANCE_ROLES),
+  validate({ body: AssessBreachSchema }),
+  SecurityIncidentController.assessBreach
+);
+
+// ---- Breach & Incident Monitoring Summary (R-44) ----
+router.get(
+  '/breach-monitoring',
+  requireRoles('admin', 'privacy_officer', 'medical_director'),
+  SecurityIncidentController.getBreachMonitoringSummary
+);
+
+
+// ---- Vendor Management & BAA Tracking ----
+
+import { VendorController } from '../controllers/vendor.controller';
+import { CreateVendorSchema, UpdateVendorSchema } from '../schemas/vendor.schema';
+
+router.get(
+  '/vendors',
+  requireRoles(...COMPLIANCE_ROLES),
+  VendorController.getVendors
+);
+
+router.get(
+  '/vendors/:id',
+  requireRoles(...COMPLIANCE_ROLES),
+  VendorController.getVendorById
+);
+
+router.post(
+  '/vendors',
+  requireRoles(...COMPLIANCE_ROLES),
+  validate({ body: CreateVendorSchema }),
+  VendorController.createVendor
+);
+
+router.patch(
+  '/vendors/:id',
+  requireRoles(...COMPLIANCE_ROLES),
+  validate({ body: UpdateVendorSchema }),
+  VendorController.updateVendor
+);
+
+router.delete(
+  '/vendors/:id',
+  requireRoles(...COMPLIANCE_ROLES),
+  VendorController.archiveVendor
+);
+
+// ---- Vendor Annual BAA Reminders Engine (R-52) ----
+
+router.get(
+  '/vendors-baa/dashboard',
+  requireRoles(...COMPLIANCE_ROLES),
+  VendorController.getBaaDashboard
+);
+
+router.post(
+  '/vendors-baa/reminders/process',
+  requireRoles(...COMPLIANCE_ROLES),
+  VendorController.processBaaReminders
+);
+
+// ---- Google Calendar Sync & OAuth (R-03) ----
+import { GoogleCalendarController } from '../controllers/googleCalendar.controller';
+
+router.get(
+  '/google-calendar/auth-url',
+  requireRoles(...STAFF_ROLES),
+  GoogleCalendarController.getAuthUrl
+);
+
+router.post(
+  '/google-calendar/callback',
+  requireRoles(...STAFF_ROLES),
+  GoogleCalendarController.handleCallback
+);
+
+router.get(
+  '/google-calendar/status',
+  requireRoles(...STAFF_ROLES),
+  GoogleCalendarController.getStatus
+);
+
+router.post(
+  '/google-calendar/disconnect',
+  requireRoles(...STAFF_ROLES),
+  GoogleCalendarController.disconnect
+);
+
+router.post(
+  '/google-calendar/sync-appointment/:id',
+  requireRoles(...STAFF_ROLES),
+  GoogleCalendarController.syncAppointment
+);
+
+
 export default router;
+
+
+
+
+
+

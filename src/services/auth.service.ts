@@ -19,8 +19,10 @@ import { signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToke
 import { UserRoleName, ErrorCodes } from '../types';
 import { logger, logAuthEvent, logSecurityEvent } from '../utils/logger';
 import { LoginInput, ChangePasswordInput } from '../schemas/auth.schema';
+import { PasswordPolicyService } from './passwordPolicy.service';
 
 const MAX_FAILED_ATTEMPTS = 5;
+
 const LOCKOUT_MINUTES = 15;
 const PASSWORD_HISTORY_LIMIT = 5;
 const BCRYPT_SALT_ROUNDS = 12;
@@ -550,7 +552,11 @@ export class AuthService {
       }
     }
 
+    // Enforce server-side password policy & HIBP pwned check
+    await PasswordPolicyService.validatePassword(input.newPassword);
+
     const newPasswordHash = await bcrypt.hash(input.newPassword, BCRYPT_SALT_ROUNDS);
+
 
     // Save old password to history
     await prisma.passwordHistory.create({

@@ -186,4 +186,27 @@ export class ClinicalController {
       res.status(200).json({ success: true, data: data.notifications });
     } catch (error) { next(error); }
   }
+
+  static async getAmendmentRequests(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const status = req.query.status as string | undefined;
+      const result = await ClinicalService.getAmendmentRequests({ status });
+      res.status(200).json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  static async reviewAmendmentRequest(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || req.ip || '0.0.0.0') as string;
+      const requestId = req.params.id as string;
+      const result = await ClinicalService.reviewAmendmentRequest(requestId, req.body, userId, ip);
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: `Amendment request updated to '${result.status}'`,
+      });
+    } catch (error) { next(error); }
+  }
 }
+

@@ -13,6 +13,7 @@ import bcrypt from 'bcrypt';
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { writeAuditLog } from '../middleware/audit';
+import { GoogleCalendarService } from './googleCalendar.service';
 import { AppointmentStatus, AppointmentSource } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -451,8 +452,12 @@ export class AppointmentService {
       newValue: { newAppointmentId: newAppt.id, newStartAt },
     });
 
+    // Auto-sync rescheduled appointment to Google Calendar (PHI-safe)
+    GoogleCalendarService.syncAppointmentUpdated(newAppt.id, userId).catch(() => {});
+
     return newAppt;
   }
+
 
   /**
    * Cancel Appointment.
@@ -493,8 +498,12 @@ export class AppointmentService {
       newValue: { status: AppointmentStatus.CANCELLED, reason: input.cancellationReason },
     });
 
+    // Auto-sync cancelled appointment to Google Calendar (PHI-safe)
+    GoogleCalendarService.syncAppointmentCancelled(id, userId).catch(() => {});
+
     return updated;
   }
+
 
   /**
    * Create Public Online Booking Request (Unauthenticated).

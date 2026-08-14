@@ -12,8 +12,10 @@ import {
   AssignStaffLocationInput,
   StaffAvailabilityInput,
 } from '../schemas/user.schema';
+import { PasswordPolicyService } from './passwordPolicy.service';
 
 export class StaffService {
+
   /**
    * Create a Staff Profile for an existing User.
    */
@@ -88,6 +90,9 @@ export class StaffService {
     if (!input.password) {
       throw AppError.badRequest('Password is required for staff account creation');
     }
+    
+    await PasswordPolicyService.validatePassword(input.password);
+    
     const passwordHash = await bcrypt.hash(input.password, 12);
 
     let role = await prisma.role.findFirst({ where: { name: input.roleName } });
@@ -338,8 +343,10 @@ export class StaffService {
         userUpdateData.email = email;
       }
       if (input.password && input.password !== '••••••••' && input.password.trim().length >= 6) {
+        await PasswordPolicyService.validatePassword(input.password.trim());
         userUpdateData.passwordHash = await bcrypt.hash(input.password.trim(), 12);
       }
+
       // Handle is_active / isActive status update
       const isActiveValue = input.is_active !== undefined ? input.is_active : (input.isActive !== undefined ? input.isActive : undefined);
       if (isActiveValue !== undefined) {

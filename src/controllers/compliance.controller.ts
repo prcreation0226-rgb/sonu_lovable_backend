@@ -58,6 +58,55 @@ export class ComplianceController {
     } catch (error) { next(error); }
   }
 
+  static async createHipaaPolicy(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const policy = await ComplianceService.createHipaaPolicy(req.body, userId, ip);
+      res.status(201).json({ success: true, data: policy, message: 'HIPAA policy created successfully' });
+    } catch (error) { next(error); }
+  }
+
+  static async updatePolicyStatus(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const policy = await ComplianceService.updatePolicyStatus(req.params.id as string, req.body, userId, ip);
+      res.status(200).json({ success: true, data: policy, message: 'Policy status updated successfully' });
+    } catch (error) { next(error); }
+  }
+
+  static async getPolicyVersions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const versions = await ComplianceService.getPolicyVersions(req.params.id as string);
+      res.status(200).json({ success: true, data: versions });
+    } catch (error) { next(error); }
+  }
+
+  static async getPolicyApprovals(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const approvals = await ComplianceService.getPolicyApprovals(req.params.id as string);
+      res.status(200).json({ success: true, data: approvals });
+    } catch (error) { next(error); }
+  }
+
+  static async acknowledgePolicy(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const ack = await ComplianceService.acknowledgePolicy(req.params.id as string, req.body, userId, ip);
+      res.status(201).json({ success: true, data: ack, message: 'Policy acknowledged successfully' });
+    } catch (error) { next(error); }
+  }
+
+  static async getPolicyAcknowledgements(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const acks = await ComplianceService.getPolicyAcknowledgements(req.params.id as string);
+      res.status(200).json({ success: true, data: acks });
+    } catch (error) { next(error); }
+  }
+
+
   // ---- Training Records ----
 
   static async createTrainingRecord(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -75,6 +124,53 @@ export class ComplianceController {
       res.status(200).json({ success: true, data: records });
     } catch (error) { next(error); }
   }
+
+  static async getAllTrainingRecords(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { status, staffId, isAnnual } = req.query;
+      const records = await ComplianceService.getAllTrainingRecords({
+        status: status as string,
+        staffId: staffId as string,
+        isAnnual: isAnnual === 'true' ? true : (isAnnual === 'false' ? false : undefined),
+      });
+      res.status(200).json({ success: true, data: records });
+    } catch (error) { next(error); }
+  }
+
+  static async completeTrainingRecord(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id as string;
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const record = await ComplianceService.completeTrainingRecord(id, req.body, userId, ip);
+      res.status(200).json({ success: true, data: record, message: 'Training completed successfully' });
+    } catch (error) { next(error); }
+  }
+
+  static async acknowledgeAnnualHipaa(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const ip = (req.clientIp || '0.0.0.0') as string;
+      const result = await ComplianceService.acknowledgeAnnualHipaa(userId, req.body, ip);
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: result.alreadyAcknowledged
+          ? 'Annual HIPAA training already acknowledged for this version'
+          : 'Annual HIPAA training acknowledged successfully',
+      });
+    } catch (error) { next(error); }
+  }
+
+  static async getAnnualHipaaDashboard(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const dashboard = await ComplianceService.getAnnualHipaaDashboard();
+      res.status(200).json({ success: true, data: dashboard });
+    } catch (error) { next(error); }
+  }
+
+
+
 
   // ---- External Disclosures ----
 
@@ -109,4 +205,12 @@ export class ComplianceController {
       res.status(200).json({ success: true, data: result.logs, meta: result.meta });
     } catch (error) { next(error); }
   }
+
+  static async getMarketingRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const recipients = await ComplianceService.getMarketingRecipients();
+      res.status(200).json({ success: true, data: recipients });
+    } catch (error) { next(error); }
+  }
 }
+

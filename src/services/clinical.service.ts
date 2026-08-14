@@ -17,7 +17,9 @@ import {
   UpdateSoapNoteInput,
   SignSoapNoteInput,
   AddendumInput,
+  ReviewAmendmentRequestInput,
 } from '../schemas/clinical.schema';
+
 
 export class ClinicalService {
   // ==========================================
@@ -910,4 +912,157 @@ export class ClinicalService {
 
     return { notifications: [notifPayload] };
   }
+
+  /**
+   * Get all patient record amendment requests for Staff / Privacy Officer review.
+   */
+  static async getAmendmentRequests(filters?: { status?: string }) {
+    const where: any = {};
+    if (filters?.status) where.status = filters.status;
+
+    return prisma.patientAmendmentRequest.findMany({
+      where,
+      include: {
+        patient: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+          },
+        },
+        reviewer: { select: { id: true, fullName: true, title: true } },
+        note: { select: { id: true, createdAt: true, status: true, noteType: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Review (Approve or Deny) Patient Record Amendment Request (HIPAA §164.526).
+   * Transactionally creates NoteAddendum on approval if noteId is present without modifying original SOAP note.
+   */
+  static async reviewAmendmentRequest(
+    requestId: string,
+    input: ReviewAmendmentRequestInput,
+    userId: string,
+    ipAddress: string
+  ) {
+    const staff = await prisma.staffProfile.findFirst({
+      where: { userId, deletedAt: null },
+    });
+
+    if (!staff) {
+      throw AppError.forbidden('Staff profile required for clinical review');
+    }
+
+    const request = await prisma.patientAmendmentRequest.findUnique({
+      where: { id: requestId },
+      include: { note: true },
+    });
+
+    if (!request) {
+      throw AppError.notFound('Amendment request not found');
+    }
+
+    if (request.status === 'approved' || request.status === 'denied') {
+      throw AppError.badRequest(`Amendment request has already been finalized as '${request.status}'`);
+    }
+
+    const now = new Date();
+
+    if (input.status === 'approved') {
+      // 1. If linked to a SoapNote, transactionally append immutable NoteAddendum
+      if (request.noteId && request.note) {
+        if (!['signed', 'cosigned', 'locked'].includes(request.note.status)) {
+          throw AppError.badRequest(`Target note #${request.noteId} is in '${request.note.status}' status and cannot accept addenda`);
+        }
+
+        const addendumText = input.addendumText || input.staffResponse || request.requestedCorrection;
+
+        const addendum = await prisma.noteAddendum.create({
+          data: {
+            noteId: request.noteId,
+            patientId: request.patientId,
+            requestedBy: 'patient',
+            reason: request.rationale,
+            addendumText,
+            authorId: staff.id,
+          },
+        });
+
+        await writeAuditLog({
+          userId,
+          patientId: request.patientId,
+          action: 'SOAP_NOTE_ADDENDUM_APPENDED',
+          resourceType: 'soap_addendum',
+          resourceId: addendum.id,
+          ipAddress,
+        });
+      }
+
+      // 2. Update amendment request status to approved
+      const updated = await prisma.patientAmendmentRequest.update({
+        where: { id: requestId },
+        data: {
+          status: 'approved',
+          staffResponse: input.staffResponse || 'Amendment request approved.',
+          reviewedBy: staff.id,
+          reviewedAt: now,
+        },
+      });
+
+      await writeAuditLog({
+        userId,
+        patientId: request.patientId,
+        action: 'AMENDMENT_REQUEST_APPROVED',
+        resourceType: 'patient_amendment_request',
+        resourceId: updated.id,
+        ipAddress,
+      });
+
+      return updated;
+    }
+
+    if (input.status === 'denied') {
+      const denialReason = input.denialReason || input.staffResponse || 'Does not meet medical/legal criteria for amendment.';
+
+      const updated = await prisma.patientAmendmentRequest.update({
+        where: { id: requestId },
+        data: {
+          status: 'denied',
+          staffResponse: input.staffResponse || denialReason,
+          denialReason,
+          reviewedBy: staff.id,
+          reviewedAt: now,
+        },
+      });
+
+      await writeAuditLog({
+        userId,
+        patientId: request.patientId,
+        action: 'AMENDMENT_REQUEST_DENIED',
+        resourceType: 'patient_amendment_request',
+        resourceId: updated.id,
+        ipAddress,
+      });
+
+      return updated;
+    }
+
+    // Default under_review transition
+    const updated = await prisma.patientAmendmentRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'under_review',
+        staffResponse: input.staffResponse || null,
+        reviewedBy: staff.id,
+        reviewedAt: now,
+      },
+    });
+
+    return updated;
+  }
 }
+

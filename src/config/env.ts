@@ -92,7 +92,8 @@ export const env = {
   RATE_LIMIT_MAX_REQUESTS: optionalIntEnv('RATE_LIMIT_MAX_REQUESTS', 100),
 
   // MFA Feature Flags & Encryption
-  MFA_ENFORCEMENT_ENABLED: optionalEnv('MFA_ENFORCEMENT_ENABLED', 'false') === 'true',
+  MFA_ENFORCEMENT_ENABLED: optionalEnv('MFA_ENFORCEMENT_ENABLED', 'true') === 'true',
+
   MFA_REQUIRED_ROLES: optionalEnv(
     'MFA_REQUIRED_ROLES',
     'admin,nurse_practitioner,medical_director,rn_injector,privacy_officer'

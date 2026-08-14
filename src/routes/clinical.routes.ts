@@ -20,7 +20,9 @@ import {
   SignSoapNoteSchema,
   RejectSoapNoteSchema,
   AddendumSchema,
+  ReviewAmendmentRequestSchema,
 } from '../schemas/clinical.schema';
+
 
 const router = Router();
 
@@ -294,4 +296,55 @@ router.get(
   ClinicalController.getMdNotifications
 );
 
+/**
+ * @route   GET /api/v1/clinical/amendment-requests
+ * @desc    Get all Patient Record Amendment Requests for Privacy Officer / Clinical Review
+ * @access  Admin, Privacy Officer, Medical Director, Nurse Practitioner
+ */
+router.get(
+  '/amendment-requests',
+  requireRoles('admin', 'privacy_officer', 'medical_director', 'nurse_practitioner'),
+  auditPhiAccess('soap_note', 'view'),
+  ClinicalController.getAmendmentRequests
+);
+
+/**
+ * @route   PATCH /api/v1/clinical/amendment-requests/:id
+ * @desc    Review (Approve/Deny) Patient Record Amendment Request (HIPAA §164.526)
+ * @access  Admin, Privacy Officer, Medical Director, Nurse Practitioner
+ */
+router.patch(
+  '/amendment-requests/:id',
+  requireRoles('admin', 'privacy_officer', 'medical_director', 'nurse_practitioner'),
+  validate({ body: ReviewAmendmentRequestSchema }),
+  auditPhiAccess('soap_note', 'update'),
+  ClinicalController.reviewAmendmentRequest
+);
+
+
+// ---- AI Scribe & Clinical Note Generator (R-34) ----
+import { AiScribeController } from '../controllers/aiScribe.controller';
+
+router.post(
+  '/ai-scribe/generate',
+  requireRoles(...CLINICAL_ROLES),
+  auditPhiAccess('soap_note', 'create'),
+  AiScribeController.generate
+);
+
+router.post(
+  '/ai-scribe/apply-to-note',
+  requireRoles(...CLINICAL_ROLES),
+  auditPhiAccess('soap_note', 'update'),
+  AiScribeController.applyToNote
+);
+
+router.get(
+  '/ai-scribe/status',
+  requireRoles(...CLINICAL_ROLES),
+  AiScribeController.getStatus
+);
+
 export default router;
+
+

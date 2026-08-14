@@ -8,6 +8,7 @@ import { AppError } from '../utils/AppError';
 import { writeAuditLog } from '../middleware/audit';
 import { UserRoleName } from '../types';
 import { CreateUserInput, UpdateUserInput, LockUnlockUserInput } from '../schemas/user.schema';
+import { PasswordPolicyService } from './passwordPolicy.service';
 
 const BCRYPT_SALT_ROUNDS = 12;
 
@@ -20,6 +21,8 @@ export class UserService {
     if (existing) {
       throw AppError.conflict('A user with this email address already exists');
     }
+
+    await PasswordPolicyService.validatePassword(input.password);
 
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_SALT_ROUNDS);
 

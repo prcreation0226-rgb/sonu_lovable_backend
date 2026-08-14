@@ -135,7 +135,9 @@ export class MfaService {
     // Generate 10 new recovery codes hashed with HMAC-SHA256
     const recoveryCodes = generateRecoveryCodes(10);
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(
+      async (tx) => {
+
       // Activate factor
       await tx.mfaFactor.update({
         where: { id: factor.id },
@@ -152,14 +154,18 @@ export class MfaService {
         data: { mfaEnabled: true },
       });
 
-      // Insert hashed recovery codes in 1 query
       await tx.mfaRecoveryCode.createMany({
         data: recoveryCodes.map((rc) => ({
           userId,
           codeHash: hashRecoveryCode(rc),
         })),
       });
-    });
+    },
+    { timeout: 20000 }
+    );
+
+
+
 
     await writeAuditLog({
       userId,

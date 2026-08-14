@@ -36,11 +36,17 @@ export const CreatePolicyVersionSchema = z.object({
 
 export const CreateStaffTrainingSchema = z.object({
   staffId: z.string().uuid(),
-  policyVersionId: z.string().uuid(),
-  trainingName: z.string().min(3).max(255).trim(),
-  score: z.number().int().min(0).max(100).optional(),
-  signatureData: z.string().min(5).optional(),
+  policyVersionId: z.string().uuid().optional().nullable(),
+  trainingName: z.string().min(3).max(255).trim().optional(),
+  trainingType: z.string().trim().optional(),
+  isAnnual: z.boolean().optional(),
+  expiresAt: z.string().optional().nullable(),
+  completed: z.boolean().optional(),
+  score: z.number().int().min(0).max(100).optional().nullable(),
+  certificateUrl: z.string().trim().optional().nullable(),
+  signatureData: z.string().min(5).optional().nullable(),
 });
+
 
 // ---- External Disclosure Schemas ----
 
@@ -64,11 +70,43 @@ export const QueryAuditLogSchema = z.object({
   perPage: z.coerce.number().int().min(1).max(100).default(25),
 });
 
+// ---- Policy Governance Schemas ----
+
+export const CreateHipaaPolicySchema = z.object({
+  title: z.string().min(3).max(500).trim(),
+  category: z.string().min(2).max(100).trim().default('Administrative Safeguards'),
+  summary: z.string().max(2000).trim().optional(),
+  bodyMarkdown: z.string().min(10).trim(),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
+  reviewDueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+export const UpdatePolicyStatusSchema = z.object({
+  title: z.string().min(3).max(500).trim().optional(),
+  category: z.string().min(2).max(100).trim().optional(),
+  summary: z.string().max(2000).trim().optional(),
+  bodyMarkdown: z.string().min(10).trim().optional(),
+  status: z.enum(['draft', 'review', 'approved', 'archived']).optional(),
+  approvalStatus: z.enum(['approved', 'pending_review', 'rejected']).optional(),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  reviewDueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  notes: z.string().max(2000).trim().optional(),
+});
+
+export const AcknowledgePolicySchema = z.object({
+  signatureText: z.string().min(2).max(255).trim(),
+  policyVersionId: z.string().uuid().optional(),
+});
+
 // ---- Type Exports ----
 
 export type CreateBreachReportInput = z.infer<typeof CreateBreachReportSchema>;
 export type UpdateBreachReportInput = z.infer<typeof UpdateBreachReportSchema>;
 export type CreatePolicyVersionInput = z.infer<typeof CreatePolicyVersionSchema>;
+export type CreateHipaaPolicyInput = z.infer<typeof CreateHipaaPolicySchema>;
+export type UpdatePolicyStatusInput = z.infer<typeof UpdatePolicyStatusSchema>;
+export type AcknowledgePolicyInput = z.infer<typeof AcknowledgePolicySchema>;
 export type CreateStaffTrainingInput = z.infer<typeof CreateStaffTrainingSchema>;
 export type CreateExternalDisclosureInput = z.infer<typeof CreateExternalDisclosureSchema>;
 export type QueryAuditLogInput = z.infer<typeof QueryAuditLogSchema>;
+

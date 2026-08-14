@@ -135,6 +135,9 @@ import tableCompatibilityRouter from './routes/tableCompatibility.routes';
 import availabilityRouter from './routes/availability.routes';
 import serviceRouter from './routes/service.routes';
 import patientAccountRouter from './routes/patientAccount.routes';
+import emailRouter from './routes/email.routes';
+import smsRouter from './routes/sms.routes';
+import voAlertRouter from './routes/voAlert.routes';
 
 const apiRouters: [string, any][] = [
   ['/auth/mfa', mfaRouter],
@@ -155,7 +158,14 @@ const apiRouters: [string, any][] = [
   ['/inventory', inventoryRouter],
   ['/billing', billingRouter],
   ['/compliance', complianceRouter],
+  ['/email', emailRouter],
+  ['/sms', smsRouter],
+  ['/vo-alert-oncall', voAlertRouter],
+  ['/clinical/vo-alert-oncall', voAlertRouter],
 ];
+
+
+
 
 for (const [path, router] of apiRouters) {
   if (env.API_PREFIX !== '/api') {
