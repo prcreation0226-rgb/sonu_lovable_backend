@@ -138,6 +138,7 @@ import patientAccountRouter from './routes/patientAccount.routes';
 import emailRouter from './routes/email.routes';
 import smsRouter from './routes/sms.routes';
 import voAlertRouter from './routes/voAlert.routes';
+import { marketingRouter } from './routes/marketing.routes';
 
 const apiRouters: [string, any][] = [
   ['/auth/mfa', mfaRouter],
@@ -158,6 +159,7 @@ const apiRouters: [string, any][] = [
   ['/inventory', inventoryRouter],
   ['/billing', billingRouter],
   ['/compliance', complianceRouter],
+  ['/marketing', marketingRouter],
   ['/email', emailRouter],
   ['/sms', smsRouter],
   ['/vo-alert-oncall', voAlertRouter],
