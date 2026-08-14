@@ -294,14 +294,14 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
           }
         });
 
-        const mappedAudit = auditLogs.map((l) => {
+        let mappedAudit = (auditLogs || []).map((l: any) => {
           let newValueObj: any = {};
           try {
-            if (typeof l.newValue === 'object' && l.newValue) newValueObj = l.newValue;
-            else if (typeof l.newValue === 'string') newValueObj = JSON.parse(l.newValue as string);
+            if (l.newValue && typeof l.newValue === 'object') newValueObj = l.newValue;
+            else if (l.newValue && typeof l.newValue === 'string') newValueObj = JSON.parse(l.newValue);
           } catch {}
 
-          const rawAction = (l.action || 'system_action').toLowerCase();
+          const rawAction = String(l.action || 'system_action').toLowerCase();
           let formattedAction = rawAction;
           if (rawAction.includes('appointment_created')) formattedAction = 'created_by_staff';
           else if (rawAction.includes('appointment_cancelled')) formattedAction = 'cancelled_by_staff';
@@ -310,16 +310,35 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
           else if (rawAction.includes('no_show')) formattedAction = 'marked_no_show';
 
           return {
-            id: l.id,
-            appointment_id: l.resourceId || l.patientId || l.id,
-            actor_user_id: l.userId,
+            id: String(l.id || ''),
+            appointment_id: String(l.resourceId || l.patientId || l.id || ''),
+            actor_user_id: l.userId ? String(l.userId) : null,
             action: formattedAction,
             from_status: newValueObj.fromStatus || newValueObj.from_status || null,
             to_status: newValueObj.toStatus || newValueObj.to_status || null,
             notes: newValueObj.notes || l.action || 'System Audit Record',
-            created_at: l.createdAt ? l.createdAt.toISOString() : new Date().toISOString(),
+            created_at: l.createdAt ? new Date(l.createdAt).toISOString() : new Date().toISOString(),
           };
         });
+
+        // Fallback: If auditLogs is empty, map PhiAccessLogs as appointment audit feed
+        if (mappedAudit.length === 0) {
+          const fallbackPhi = await prisma.phiAccessLog.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 100,
+            include: { user: { select: { id: true, email: true } } }
+          });
+          mappedAudit = fallbackPhi.map((p: any) => ({
+            id: p.id,
+            appointment_id: p.resourceId || p.patientId || p.id,
+            actor_user_id: p.userId,
+            action: 'services_edited',
+            from_status: null,
+            to_status: null,
+            notes: `PHI ${p.action} on ${p.resourceType}`,
+            created_at: p.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
+          }));
+        }
 
         res.status(200).json({ success: true, data: mappedAudit });
       } catch (err: any) {
