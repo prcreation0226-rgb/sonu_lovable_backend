@@ -182,7 +182,7 @@ export class AuthController {
       const response: ApiResponse = {
         success: true,
         data: {
-          user: req.user,
+          user: req.user || null,
         },
       };
 
@@ -191,6 +191,7 @@ export class AuthController {
       next(error);
     }
   }
+
 
   /**
    * POST /api/v1/auth/mfa/setup

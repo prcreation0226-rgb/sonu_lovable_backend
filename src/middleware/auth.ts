@@ -67,14 +67,7 @@ export async function authenticate(
     });
 
     if (!dbUser) {
-      const fallbackRoles = (decoded.roles && decoded.roles.length ? decoded.roles : ['admin', 'medical_director', 'privacy_officer', 'nurse_practitioner', 'rn_injector', 'front_desk', 'staff']) as UserRoleName[];
-      req.user = {
-        id: decoded.sub || 'user-demo',
-        email: decoded.email || 'admin@gmail.com',
-        roles: fallbackRoles,
-        sessionId: decoded.sessionId || 'session-demo',
-      };
-      return next();
+      throw new AppError('User account not found or session invalid', 401, ErrorCodes.TOKEN_INVALID);
     }
 
     if (!dbUser.isActive || dbUser.deletedAt) {
@@ -139,6 +132,7 @@ export async function authenticate(
 
 /**
  * Optional authentication — does not reject unauthenticated requests.
+ * Safely leaves req.user = undefined on any invalid/expired/deleted token or missing user.
  */
 export function optionalAuth(
   req: AuthenticatedRequest,
@@ -148,13 +142,16 @@ export function optionalAuth(
   const token = extractAccessToken(req);
 
   if (!token) {
+    req.user = undefined;
     return next(); // Continue without user context
   }
 
   authenticate(req, res, (err) => {
     if (err) {
-      return next();
+      req.user = undefined;
+      return next(); // Fail gracefully as guest without user context
     }
     next();
   });
 }
+

@@ -51,10 +51,11 @@ router.post('/refresh-token', AuthController.refreshToken);
 
 /**
  * @route   GET /api/v1/auth/me
- * @desc    Get profile & roles of authenticated user
- * @access  Protected
+ * @desc    Get profile & roles of current session (returns user: null if unauthenticated)
+ * @access  Public / Optional Auth
  */
-router.get('/me', authenticate, AuthController.getMe);
+router.get('/me', optionalAuth, AuthController.getMe);
+
 
 /**
  * @route   POST /api/v1/auth/logout
