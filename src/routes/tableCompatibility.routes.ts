@@ -290,8 +290,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
           orderBy: { createdAt: 'desc' },
           take: 200,
           include: {
-            user: { select: { id: true, email: true } },
-            patient: { select: { id: true, firstName: true, lastName: true, email: true } }
+            user: { select: { id: true, email: true } }
           }
         });
 
