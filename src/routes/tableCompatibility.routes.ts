@@ -246,8 +246,36 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
     // 3. PHI Access Logs
     if (tableName === 'phi_access_log' || tableName === 'phi_access_logs') {
       try {
-        const result = await ComplianceService.queryPhiAccessLogs({ page: 1, perPage: 100 });
-        res.status(200).json({ success: true, data: result.logs || [] });
+        const phiLogs = await prisma.phiAccessLog.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 200,
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                staffProfile: { select: { fullName: true } }
+              }
+            },
+            patient: { select: { email: true } }
+          }
+        });
+
+        const mappedPhi = phiLogs.map((l) => ({
+          id: l.id,
+          actor_user_id: l.userId,
+          actor_name: l.user?.staffProfile?.fullName || (l.user?.email ? l.user.email.split('@')[0] : 'System'),
+          actor_email: l.user?.email || 'system@radiantilyk.com',
+          resource_type: l.resourceType,
+          resource_id: l.resourceId,
+          client_email: l.patient?.email || 'N/A',
+          action: l.action,
+          route: l.route,
+          break_glass_reason: l.breakGlassReason,
+          created_at: l.createdAt ? l.createdAt.toISOString() : new Date().toISOString(),
+        }));
+
+        res.status(200).json({ success: true, data: mappedPhi });
       } catch (err: any) {
         console.error("Error querying phi_access_log:", err?.message || err);
         res.status(200).json({ success: true, data: [] });
@@ -255,13 +283,40 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // 4. Audit Logs
-    if (tableName === 'audit_logs' || tableName === 'audit_log') {
+    // 4. Appointment Audit Log / System Audit Logs
+    if (tableName === 'appointment_audit_log' || tableName === 'appointment_audit_logs' || tableName === 'audit_logs' || tableName === 'audit_log') {
       try {
-        const result = await ComplianceService.queryAuditLogs({ page: 1, perPage: 100 });
-        res.status(200).json({ success: true, data: result.logs || [] });
+        const auditLogs = await prisma.auditLog.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 200,
+          include: {
+            user: { select: { id: true, email: true } },
+            patient: { select: { id: true, firstName: true, lastName: true, email: true } }
+          }
+        });
+
+        const mappedAudit = auditLogs.map((l) => {
+          let newValueObj: any = {};
+          try {
+            if (typeof l.newValue === 'object' && l.newValue) newValueObj = l.newValue;
+            else if (typeof l.newValue === 'string') newValueObj = JSON.parse(l.newValue as string);
+          } catch {}
+
+          return {
+            id: l.id,
+            appointment_id: l.resourceId || l.patientId || l.id,
+            actor_user_id: l.userId,
+            action: (l.action || 'system_action').toLowerCase(),
+            from_status: newValueObj.fromStatus || newValueObj.from_status || null,
+            to_status: newValueObj.toStatus || newValueObj.to_status || null,
+            notes: newValueObj.notes || l.action || 'System Audit Record',
+            created_at: l.createdAt ? l.createdAt.toISOString() : new Date().toISOString(),
+          };
+        });
+
+        res.status(200).json({ success: true, data: mappedAudit });
       } catch (err: any) {
-        console.error("Error querying audit_logs:", err?.message || err);
+        console.error("Error querying appointment_audit_log:", err?.message || err);
         res.status(200).json({ success: true, data: [] });
       }
       return;
