@@ -91,7 +91,7 @@ export const env = {
   RATE_LIMIT_WINDOW_MS: optionalIntEnv('RATE_LIMIT_WINDOW_MS', 900000),
   RATE_LIMIT_MAX_REQUESTS: optionalIntEnv('RATE_LIMIT_MAX_REQUESTS', 100),
 
-  // MFA Feature Flags & Encryption
+  // MFA Feature Flags & Encryption (Production default is true; overridden to false by local .env for local UAT)
   MFA_ENFORCEMENT_ENABLED: optionalEnv('MFA_ENFORCEMENT_ENABLED', 'true') === 'true',
 
   MFA_REQUIRED_ROLES: optionalEnv(
@@ -106,3 +106,8 @@ export const env = {
   LOG_LEVEL: optionalEnv('LOG_LEVEL', 'debug'),
   LOG_FILE_PATH: optionalEnv('LOG_FILE_PATH', './logs'),
 } as const;
+
+if (env.NODE_ENV === 'production' && !env.MFA_ENFORCEMENT_ENABLED) {
+  console.warn('[SECURITY WARNING] MFA_ENFORCEMENT_ENABLED is disabled (false) in PRODUCTION environment!');
+}
+

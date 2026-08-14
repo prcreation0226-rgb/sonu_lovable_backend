@@ -255,12 +255,13 @@ export class AuthService {
 
     const roles = user.userRoles.map((ur) => ur.role.name as UserRoleName);
 
-    // 4. Check MFA Requirement (Enforcement flag & Active factor check)
+    // 4. Check MFA Requirement (Enforced only when env.MFA_ENFORCEMENT_ENABLED=true)
     const isRequiredRole = roles.some((r) => (env.MFA_REQUIRED_ROLES as readonly string[]).includes(r));
     const mustEnforceMfa = env.MFA_ENFORCEMENT_ENABLED && isRequiredRole;
     const hasActiveMfa = user.mfaEnabled || (await prisma.mfaFactor.count({ where: { userId: user.id, status: 'active', disabledAt: null } })) > 0;
 
-    if (mustEnforceMfa || hasActiveMfa) {
+    if (env.MFA_ENFORCEMENT_ENABLED && (mustEnforceMfa || hasActiveMfa)) {
+
       const scope = hasActiveMfa ? 'MFA_LOGIN' : 'MFA_ENROLLMENT';
       const challenge = await MfaService.createChallenge(user.id, scope);
       await this.recordAuthAudit(user.id, cleanEmail, 'MFA_ENROLL_STARTED', ipAddress, userAgent, {

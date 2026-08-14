@@ -19,15 +19,11 @@ export async function requireMfa(
       throw new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID);
     }
 
-    // Check if user has a role requiring MFA enforcement
-    const isRequiredRole = req.user.roles.some((r) =>
-      (env.MFA_REQUIRED_ROLES as readonly string[]).includes(r)
-    );
-
-    // If enforcement is disabled and role doesn't strictly enforce, bypass
-    if (!env.MFA_ENFORCEMENT_ENABLED && !isRequiredRole) {
+    // If MFA enforcement is disabled for local dev/testing, bypass check
+    if (!env.MFA_ENFORCEMENT_ENABLED) {
       return next();
     }
+
 
     // Query exact session record from MySQL
     const session = await prisma.session.findUnique({
@@ -68,6 +64,11 @@ export async function requireRecentAal2(
     if (!req.user || !req.user.sessionId) {
       throw new AppError('Authentication required', 401, ErrorCodes.TOKEN_INVALID);
     }
+
+    if (!env.MFA_ENFORCEMENT_ENABLED) {
+      return next();
+    }
+
 
     const session = await prisma.session.findUnique({
       where: { id: req.user.sessionId },
