@@ -248,31 +248,21 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       try {
         const phiLogs = await prisma.phiAccessLog.findMany({
           orderBy: { createdAt: 'desc' },
-          take: 200,
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                staffProfile: { select: { fullName: true } }
-              }
-            },
-            patient: { select: { email: true } }
-          }
+          take: 200
         });
 
-        const mappedPhi = phiLogs.map((l) => ({
-          id: l.id,
-          actor_user_id: l.userId,
-          actor_name: l.user?.staffProfile?.fullName || (l.user?.email ? l.user.email.split('@')[0] : 'System'),
-          actor_email: l.user?.email || 'system@radiantilyk.com',
-          resource_type: l.resourceType,
-          resource_id: l.resourceId,
-          client_email: l.patient?.email || 'N/A',
-          action: l.action,
-          route: l.route,
-          break_glass_reason: l.breakGlassReason,
-          created_at: l.createdAt ? l.createdAt.toISOString() : new Date().toISOString(),
+        const mappedPhi = (phiLogs || []).map((l: any) => ({
+          id: String(l.id || ''),
+          actor_user_id: l.userId ? String(l.userId) : null,
+          actor_name: 'Staff User',
+          actor_email: 'staff@radiantilyk.com',
+          resource_type: String(l.resourceType || 'system'),
+          resource_id: l.resourceId ? String(l.resourceId) : null,
+          client_email: 'patient@radiantilyk.com',
+          action: String(l.action || 'access'),
+          route: l.route ? String(l.route) : null,
+          break_glass_reason: l.breakGlassReason ? String(l.breakGlassReason) : null,
+          created_at: l.createdAt ? new Date(l.createdAt).toISOString() : new Date().toISOString(),
         }));
 
         res.status(200).json({ success: true, data: mappedPhi });
@@ -288,10 +278,7 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       try {
         const auditLogs = await prisma.auditLog.findMany({
           orderBy: { createdAt: 'desc' },
-          take: 200,
-          include: {
-            user: { select: { id: true, email: true } }
-          }
+          take: 200
         });
 
         let mappedAudit = (auditLogs || []).map((l: any) => {
@@ -325,13 +312,12 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
         if (mappedAudit.length === 0) {
           const fallbackPhi = await prisma.phiAccessLog.findMany({
             orderBy: { createdAt: 'desc' },
-            take: 100,
-            include: { user: { select: { id: true, email: true } } }
+            take: 100
           });
-          mappedAudit = fallbackPhi.map((p: any) => ({
-            id: p.id,
-            appointment_id: p.resourceId || p.patientId || p.id,
-            actor_user_id: p.userId,
+          mappedAudit = (fallbackPhi || []).map((p: any) => ({
+            id: String(p.id || ''),
+            appointment_id: String(p.resourceId || p.patientId || p.id || ''),
+            actor_user_id: p.userId ? String(p.userId) : null,
             action: 'services_edited',
             from_status: null,
             to_status: null,
