@@ -302,11 +302,19 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
             else if (typeof l.newValue === 'string') newValueObj = JSON.parse(l.newValue as string);
           } catch {}
 
+          const rawAction = (l.action || 'system_action').toLowerCase();
+          let formattedAction = rawAction;
+          if (rawAction.includes('appointment_created')) formattedAction = 'created_by_staff';
+          else if (rawAction.includes('appointment_cancelled')) formattedAction = 'cancelled_by_staff';
+          else if (rawAction.includes('appointment_rescheduled')) formattedAction = 'rescheduled_by_staff';
+          else if (rawAction.includes('checkout') || rawAction.includes('completed')) formattedAction = 'marked_completed';
+          else if (rawAction.includes('no_show')) formattedAction = 'marked_no_show';
+
           return {
             id: l.id,
             appointment_id: l.resourceId || l.patientId || l.id,
             actor_user_id: l.userId,
-            action: (l.action || 'system_action').toLowerCase(),
+            action: formattedAction,
             from_status: newValueObj.fromStatus || newValueObj.from_status || null,
             to_status: newValueObj.toStatus || newValueObj.to_status || null,
             notes: newValueObj.notes || l.action || 'System Audit Record',
