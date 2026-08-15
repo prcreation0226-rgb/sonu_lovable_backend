@@ -9,7 +9,28 @@ import { AuthenticatedRequest } from '../types';
 
 const router = Router();
 
-// Apply authentication to all marketing routes
+// ---- Public Route: Canonical Secure Patient Review Submission ----
+// Authenticated not required for patient review submission via cryptographically secure token
+router.post('/reviews/submit', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await MarketingService.submitReviewFeedback(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Backward compatibility alias for /submit-feedback
+router.post('/submit-feedback', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await MarketingService.submitReviewFeedback(req.body);
+    res.status(200).json({ data: result, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Apply authentication to all internal staff marketing management routes
 router.use(authenticate);
 
 // 1. Audience Preview

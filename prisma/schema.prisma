@@ -381,6 +381,7 @@ model Location {
   zipCode         String?          @map("zip_code") @db.VarChar(10)
   phone           String?          @db.VarChar(20)
   timezone        String           @default("America/Los_Angeles") @db.VarChar(50)
+  googleReviewUrl String?          @map("google_review_url") @db.VarChar(500)
   isActive        Boolean          @default(true) @map("is_active")
   deletedAt       DateTime?        @map("deleted_at")
   createdAt       DateTime         @default(now()) @map("created_at")

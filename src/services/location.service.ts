@@ -14,6 +14,7 @@ export const LocationSchema = z.object({
   zipCode: z.string().max(10).optional(),
   phone: z.string().max(20).optional(),
   timezone: z.string().default('America/Los_Angeles'),
+  googleReviewUrl: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
 });
 
 export type LocationInput = z.infer<typeof LocationSchema>;
@@ -29,6 +30,7 @@ export class LocationService {
         zipCode: input.zipCode,
         phone: input.phone,
         timezone: input.timezone,
+        googleReviewUrl: input.googleReviewUrl || null,
       },
     });
 

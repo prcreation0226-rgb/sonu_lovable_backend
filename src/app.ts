@@ -139,6 +139,7 @@ import emailRouter from './routes/email.routes';
 import smsRouter from './routes/sms.routes';
 import voAlertRouter from './routes/voAlert.routes';
 import { marketingRouter } from './routes/marketing.routes';
+import { MarketingService } from './services/marketing.service';
 
 const apiRouters: [string, any][] = [
   ['/auth/mfa', mfaRouter],
@@ -175,6 +176,16 @@ for (const [path, router] of apiRouters) {
   }
   app.use(`/api${path}`, router);
 }
+
+// Direct public review feedback endpoint for backward compatibility
+app.post(['/api/submit-feedback', '/submit-feedback'], async (req, res, next) => {
+  try {
+    const result = await MarketingService.submitReviewFeedback(req.body);
+    res.status(200).json({ data: result, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Availability endpoints (public, no auth required)
 app.use('/api', availabilityRouter);

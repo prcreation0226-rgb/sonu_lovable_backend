@@ -14,6 +14,7 @@ import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { writeAuditLog } from '../middleware/audit';
 import { GoogleCalendarService } from './googleCalendar.service';
+import { MarketingService } from './marketing.service';
 import { AppointmentStatus, AppointmentSource } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -319,7 +320,10 @@ export class AppointmentService {
 
     if (newStatus === AppointmentStatus.CHECKED_IN) updateData.checkedInAt = now;
     if (newStatus === AppointmentStatus.IN_PROGRESS) updateData.startedAt = now;
-    if (newStatus === AppointmentStatus.COMPLETED) updateData.completedAt = now;
+    if (newStatus === AppointmentStatus.COMPLETED) {
+      updateData.completedAt = now;
+      MarketingService.handleAppointmentCompleted(id).catch(() => {});
+    }
 
     const updated = await prisma.appointment.update({
       where: { id },
