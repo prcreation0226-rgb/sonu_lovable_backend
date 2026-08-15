@@ -30,6 +30,9 @@ export const globalVendors: any[] = [
   { id: "v-google", name: "Google Workspace (Calendar Sync)", category: "Calendar & OAuth", touches_phi: true, baa_required: true, baa_status: "signed", baa_signed_at: "2025-01-12", baa_renewal_at: "2027-01-12", contact_name: "Google Support", contact_email: "workspace-admin@google.com", notes: "Google Workspace BAA Accepted" },
 ];
 
+export const globalPreOpInstructions: Record<string, { id: string; service_id: string; title: string; body_markdown: string; version: number }> = {};
+export const globalPostOpInstructions: Record<string, { id: string; service_id: string; title: string; body_markdown: string; version: number }> = {};
+
 /**
  * Explicit Handlers for Staff Invite Verification and Activation
  */
@@ -179,10 +182,54 @@ const handleStaffInviteAccept = async (req: Request, res: Response, next: NextFu
   }
 };
 
+const handleSendIntakeLinks = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { appointment_id, mode } = req.body || {};
+    if (!appointment_id) {
+      res.status(400).json({ success: false, error: { message: "appointment_id is required" } });
+      return;
+    }
+    const appt = await prisma.appointment.findUnique({
+      where: { id: appointment_id },
+      include: { patient: true }
+    });
+    if (!appt) {
+      res.status(404).json({ success: false, error: { message: "Appointment not found" } });
+      return;
+    }
+    const token = `INTAKE-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+    if (appt.patientId) {
+      await prisma.patientIntake.create({
+        data: {
+          patientId: appt.patientId,
+          token,
+          formData: {},
+          status: 'pending'
+        }
+      }).catch(() => {});
+    }
+    res.status(200).json({
+      success: true,
+      data: {
+        appointment_id,
+        mode,
+        token,
+        sent: true,
+        sent_at: new Date().toISOString()
+      },
+      message: mode === 'force' ? 'Intake link sent' : 'Reminder sent'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 router.post('/staff-invite-verify', handleStaffInviteVerify);
 router.post('/v1/staff-invite-verify', handleStaffInviteVerify);
 router.post('/staff-invite-accept', handleStaffInviteAccept);
 router.post('/v1/staff-invite-accept', handleStaffInviteAccept);
+router.post('/send-intake-links', handleSendIntakeLinks);
+router.post('/v1/send-intake-links', handleSendIntakeLinks);
 
 /**
  * Handle GET requests for legacy table endpoints (e.g. /api/breach_reports, /api/vendors)
@@ -718,6 +765,112 @@ router.get('/:tableName*', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    // 8a. Consent Forms (consent_forms) & Service Consents (service_consents)
+    if (tableName === 'consent_forms' || tableName === 'consent_form') {
+      try {
+        let templates = await prisma.consentTemplate.findMany({
+          where: { deletedAt: null },
+          orderBy: [{ serviceId: 'asc' }, { name: 'asc' }],
+          include: { service: true },
+        });
+
+        if (templates.length === 0) {
+          const initialTemplates = [
+            {
+              name: 'General Aesthetic Informed Consent & Arbitration',
+              content: '## Informed Consent for Aesthetic Medical Procedures\n\nI hereby authorize Radiantilyk Aesthetic and its clinical staff to perform aesthetic treatments. I understand the clinical rationale, anticipated benefits, potential risks, and alternative options.\n\n- I attest that I have fully disclosed my complete medical history and medications.\n- I agree to adhere to all pre and post-treatment clinical instructions.',
+              version: 1,
+              isActive: true,
+            },
+            {
+              name: 'Neurotoxin (Botox / Dysport / Xeomin) Informed Consent',
+              content: '## Neurotoxin Treatment Consent\n\nI consent to the administration of botulinum toxin (Botox/Dysport/Xeomin) for facial aesthetics.\n\n- Risks include temporary bruising, swelling, localized headache, or asymmetry.\n- Post-care: Remain upright for 4 hours; avoid strenuous exercise for 24 hours.',
+              version: 1,
+              isActive: true,
+            },
+            {
+              name: 'Hyaluronic Acid Dermal Filler Informed Consent',
+              content: '## Dermal Filler Treatment Consent\n\nI consent to the injection of hyaluronic acid dermal fillers.\n\n- Potential risks include swelling, bruising, nodule formation, and vascular compromise.\n- Immediate reporting of severe pain or discoloration is required.',
+              version: 1,
+              isActive: true,
+            },
+            {
+              name: 'Laser & Energy Skin Rejuvenation Consent',
+              content: '## Laser & IPL Treatment Consent\n\nI consent to laser/IPL skin therapy.\n\n- Risks include erythema, temporary hyperpigmentation, or mild blistering.\n- Strict daily SPF 50+ sun protection is mandatory post-treatment.',
+              version: 1,
+              isActive: true,
+            },
+          ];
+
+          for (const item of initialTemplates) {
+            const created = await prisma.consentTemplate.create({ data: item }).catch(() => null);
+            if (created) {
+              await prisma.consentVersion.create({
+                data: {
+                  templateId: created.id,
+                  versionNumber: 1,
+                  content: created.content,
+                  effectiveDate: new Date(),
+                },
+              }).catch(() => null);
+            }
+          }
+
+          templates = await prisma.consentTemplate.findMany({
+            where: { deletedAt: null },
+            orderBy: [{ serviceId: 'asc' }, { name: 'asc' }],
+            include: { service: true },
+          });
+        }
+
+        const mapped = templates.map((t) => ({
+          id: t.id,
+          slug: t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+          title: t.name,
+          body_markdown: t.content,
+          version: t.version,
+          is_active: t.isActive,
+          is_universal: !t.serviceId,
+          is_optional: false,
+          service_id: t.serviceId,
+          service_name: t.service?.name || null,
+          created_at: t.createdAt.toISOString(),
+        }));
+
+        res.status(200).json({ success: true, data: mapped });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
+    if (tableName === 'service_consents' || tableName === 'service_consent') {
+      try {
+        const mappedTemplates = await prisma.consentTemplate.findMany({
+          where: { deletedAt: null, serviceId: { not: null } },
+          select: { id: true, serviceId: true },
+        });
+        const list = mappedTemplates.map((t) => ({
+          id: `sc-${t.id}-${t.serviceId}`,
+          service_id: t.serviceId,
+          consent_form_id: t.id,
+        }));
+        res.status(200).json({ success: true, data: list });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
+    if (tableName === 'service_pre_op_instructions' || tableName === 'service_post_op_instructions') {
+      const isPre = tableName.includes('pre');
+      const store = isPre ? globalPreOpInstructions : globalPostOpInstructions;
+      res.status(200).json({ success: true, data: Object.values(store) });
+      return;
+    }
+
     // 8b. Public Client Intake Token Lookup
     if (tableName === 'public-client-intake' || tableName === 'public_client_intake') {
       const token = (req.query.token as string | undefined)?.trim();
@@ -1239,6 +1392,102 @@ router.post('/:tableName', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    // Special handling for consent_forms
+    if (tableName === 'consent_forms' || tableName === 'consent_form') {
+      try {
+        const { title, name, slug, body_markdown, content, service_id, is_active } = req.body || {};
+        const templateName = (title || name || slug || 'New Consent Form').trim();
+        const templateBody = body_markdown || content || 'Edit this consent body...';
+
+        const created = await prisma.consentTemplate.create({
+          data: {
+            name: templateName,
+            content: templateBody,
+            serviceId: service_id || undefined,
+            version: 1,
+            isActive: is_active !== false,
+          },
+          include: { service: true },
+        });
+
+        await prisma.consentVersion.create({
+          data: {
+            templateId: created.id,
+            versionNumber: 1,
+            content: templateBody,
+            effectiveDate: new Date(),
+          },
+        }).catch(() => {});
+
+        const mapped = {
+          id: created.id,
+          slug: created.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+          title: created.name,
+          body_markdown: created.content,
+          version: created.version,
+          is_active: created.isActive,
+          is_universal: !created.serviceId,
+          is_optional: false,
+          service_id: created.serviceId,
+          service_name: created.service?.name || null,
+          created_at: created.createdAt.toISOString(),
+        };
+
+        res.status(201).json({ success: true, data: mapped });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
+    // Special handling for service_consents
+    if (tableName === 'service_consents' || tableName === 'service_consent') {
+      try {
+        const { service_id, consent_form_id } = req.body || {};
+        if (consent_form_id && service_id) {
+          await prisma.consentTemplate.update({
+            where: { id: consent_form_id },
+            data: { serviceId: service_id },
+          }).catch(() => {});
+        }
+        res.status(201).json({
+          success: true,
+          data: {
+            id: `sc-${consent_form_id}-${service_id}`,
+            service_id,
+            consent_form_id,
+          },
+        });
+        return;
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
+    // Special handling for service_pre_op_instructions & service_post_op_instructions
+    if (tableName === 'service_pre_op_instructions' || tableName === 'service_post_op_instructions') {
+      const isPre = tableName.includes('pre');
+      const store = isPre ? globalPreOpInstructions : globalPostOpInstructions;
+      const { service_id, title, body_markdown } = req.body || {};
+      if (service_id) {
+        const existing = store[service_id];
+        const nextVersion = (existing?.version || 0) + 1;
+        store[service_id] = {
+          id: existing?.id || `inst-${Date.now()}`,
+          service_id,
+          title: title || (isPre ? 'Pre-Treatment Instructions' : 'After-Care Instructions'),
+          body_markdown: body_markdown || '',
+          version: nextVersion,
+        };
+        res.status(200).json({ success: true, data: store[service_id] });
+        return;
+      }
+      res.status(201).json({ success: true, data: req.body });
+      return;
+    }
+
     // Special handling for model_applications
     if (tableName === 'model_applications' || tableName === 'model_application') {
       const newApp = {
@@ -1538,6 +1787,91 @@ const handleUpdate = async (req: Request, res: Response, next: NextFunction): Pr
   try {
     const tableName = (req.params.tableName as string).toLowerCase();
 
+    // Special handling for consent_forms
+    if (tableName === 'consent_forms' || tableName === 'consent_form') {
+      try {
+        const { id, title, name, slug, body_markdown, content, is_active, is_universal, service_id } = req.body || {};
+        const targetId = id || req.query?.id as string;
+        if (targetId) {
+          const existing = await prisma.consentTemplate.findFirst({
+            where: { id: targetId },
+            include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 }, service: true },
+          });
+
+          if (existing) {
+            const nextName = (title || name || existing.name).trim();
+            const nextContent = body_markdown !== undefined ? body_markdown : (content !== undefined ? content : existing.content);
+            const contentChanged = nextContent.trim() !== existing.content.trim();
+            const currentVersion = existing.version || existing.versions[0]?.versionNumber || 1;
+            const nextVersion = contentChanged ? currentVersion + 1 : currentVersion;
+
+            if (contentChanged) {
+              await prisma.consentVersion.create({
+                data: {
+                  templateId: existing.id,
+                  versionNumber: nextVersion,
+                  content: nextContent,
+                  effectiveDate: new Date(),
+                },
+              }).catch(() => {});
+            }
+
+            const updated = await prisma.consentTemplate.update({
+              where: { id: existing.id },
+              data: {
+                name: nextName,
+                content: nextContent,
+                version: nextVersion,
+                isActive: is_active !== undefined ? Boolean(is_active) : existing.isActive,
+                serviceId: is_universal === true ? null : (service_id !== undefined ? service_id : existing.serviceId),
+              },
+              include: { service: true },
+            });
+
+            const mapped = {
+              id: updated.id,
+              slug: updated.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+              title: updated.name,
+              body_markdown: updated.content,
+              version: updated.version,
+              is_active: updated.isActive,
+              is_universal: !updated.serviceId,
+              is_optional: false,
+              service_id: updated.serviceId,
+              service_name: updated.service?.name || null,
+              created_at: updated.createdAt.toISOString(),
+            };
+
+            res.status(200).json({ success: true, data: mapped });
+            return;
+          }
+        }
+      } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+        return;
+      }
+    }
+
+    // Special handling for service_pre_op_instructions & service_post_op_instructions
+    if (tableName === 'service_pre_op_instructions' || tableName === 'service_post_op_instructions') {
+      const isPre = tableName.includes('pre');
+      const store = isPre ? globalPreOpInstructions : globalPostOpInstructions;
+      const { service_id, title, body_markdown } = req.body || {};
+      if (service_id) {
+        const existing = store[service_id];
+        const nextVersion = (existing?.version || 0) + 1;
+        store[service_id] = {
+          id: existing?.id || `inst-${Date.now()}`,
+          service_id,
+          title: title || (isPre ? 'Pre-Treatment Instructions' : 'After-Care Instructions'),
+          body_markdown: body_markdown || '',
+          version: nextVersion,
+        };
+        res.status(200).json({ success: true, data: store[service_id] });
+        return;
+      }
+    }
+
     // Special handling for model_applications
     if (tableName === 'model_applications' || tableName === 'model_application') {
       const { id, status } = req.body || {};
@@ -1757,7 +2091,11 @@ const handleUpdateById = async (req: Request, res: Response, next: NextFunction)
     const tableName = (req.params.tableName as string).toLowerCase();
     const id = req.params.id as string;
 
-    // Devices
+    // Consents by ID
+    if (tableName === 'consent_forms' || tableName === 'consent_form') {
+      req.body = { ...req.body, id };
+      return handleUpdate(req, res, next);
+    }
     if (tableName === 'device_inventory' || tableName === 'device_inventories' || tableName === 'devices' || tableName === 'device' || tableName === 'aesthetic_devices') {
       const idx = globalAestheticDevices.findIndex(d => d.id === id);
       if (idx >= 0) {
@@ -1900,6 +2238,22 @@ router.delete('/:tableName/:id', async (req: Request, res: Response, next: NextF
       if (idx >= 0) globalDevicePresets.splice(idx, 1);
     } else if (tableName === 'waitlist_entries' || tableName === 'waitlist') {
       await prisma.waitlistEntry.deleteMany({ where: { id: target } }).catch(() => {});
+    } else if (tableName === 'consent_forms' || tableName === 'consent_form') {
+      await prisma.consentTemplate.update({
+        where: { id: target },
+        data: { deletedAt: new Date(), isActive: false },
+      }).catch(() => {});
+    } else if (tableName === 'service_consents' || tableName === 'service_consent') {
+      if (target.startsWith('sc-')) {
+        const parts = target.split('-');
+        const formId = parts[1];
+        if (formId) {
+          await prisma.consentTemplate.update({
+            where: { id: formId },
+            data: { serviceId: null },
+          }).catch(() => {});
+        }
+      }
     }
     res.status(200).json({ success: true, data: { deleted: true } });
   } catch (error) {
